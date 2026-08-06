@@ -1,0 +1,21 @@
+# 환경변수 — 절대 커밋 금지 (Public 레포)
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node (barum-fe)
+node_modules/
+.next/
+out/
+
+# macOS
+.DS_Store
+
+# 기획·전략 문서 — Public 레포 제외 (심사위원이 보는 곳)
+# 심사 대응 전략과 팀원 실명이 들어 있다. 팀 내부 공유는 별도 채널로.
+docs/
