@@ -1,0 +1,23 @@
+ingredient_a,ingredient_b,level,label,reason,source
+레티놀,글라이콜릭애씨드,AVOID,같이 쓰지 마세요,각질을 녹이는 산과 레티놀이 겹치면 자극이 쌓여 따갑거나 붉어질 수 있어요.,American Academy of Dermatology - 레티노이드 사용 가이드
+레티놀,락틱애씨드,AVOID,같이 쓰지 마세요,각질을 녹이는 산과 레티놀이 겹치면 자극이 쌓여 따갑거나 붉어질 수 있어요.,American Academy of Dermatology - 레티노이드 사용 가이드
+레티놀,살리실릭애씨드,AVOID,같이 쓰지 마세요,각질을 녹이는 산과 레티놀이 겹치면 자극이 쌓여 따갑거나 붉어질 수 있어요.,American Academy of Dermatology - 레티노이드 사용 가이드
+레티놀,아스코빅애씨드,AVOID,같이 쓰지 마세요,두 성분이 힘을 내는 산도가 서로 달라 효과는 줄고 자극만 커질 수 있어요.,The Ordinary(Deciem) 공식 병용 가이드
+레티닐팔미테이트,글라이콜릭애씨드,AVOID,같이 쓰지 마세요,레티놀 계열과 각질 제거 산이 겹쳐 피부가 예민해질 수 있어요.,American Academy of Dermatology - 레티노이드 사용 가이드
+레티닐팔미테이트,살리실릭애씨드,AVOID,같이 쓰지 마세요,레티놀 계열과 각질 제거 산이 겹쳐 피부가 예민해질 수 있어요.,American Academy of Dermatology - 레티노이드 사용 가이드
+글라이콜릭애씨드,살리실릭애씨드,AVOID,같이 쓰지 마세요,성격이 다른 각질 제거 산을 한 번에 쓰면 장벽이 약해질 수 있어요.,The Ordinary(Deciem) 공식 병용 가이드
+아스코빅애씨드,글라이콜릭애씨드,AVOID,같이 쓰지 마세요,산성 성분이 겹쳐 따가움이 커질 수 있어요.,The Ordinary(Deciem) 공식 병용 가이드
+아스코빅애씨드,살리실릭애씨드,AVOID,같이 쓰지 마세요,산성 성분이 겹쳐 따가움이 커질 수 있어요.,The Ordinary(Deciem) 공식 병용 가이드
+나이아신아마이드,아스코빅애씨드,CAUTION,시간대를 나눠 쓰세요,예전에 알려진 우려는 높은 온도와 강한 산성에서의 이야기라 요즘 제품에선 드물지만 따가움이 느껴지면 아침저녁으로 나눠 쓰세요.,Paula's Choice 성분 사전 - 나이아신아마이드/비타민C 병용
+락틱애씨드,살리실릭애씨드,CAUTION,시간대를 나눠 쓰세요,둘 다 각질을 정리하는 산이라 같은 날 겹치면 건조해질 수 있어요.,The Ordinary(Deciem) 공식 병용 가이드
+만델릭애씨드,살리실릭애씨드,CAUTION,시간대를 나눠 쓰세요,둘 다 각질을 정리하는 산이라 같은 날 겹치면 건조해질 수 있어요.,The Ordinary(Deciem) 공식 병용 가이드
+3-O-에틸아스코빅애씨드,레티놀,CAUTION,시간대를 나눠 쓰세요,비타민C 유도체라 순한 편이지만 레티놀과 겹치면 자극이 느껴질 수 있어요.,Paula's Choice 성분 사전 - 비타민C 유도체
+레티닐레티노에이트,아스코빅애씨드,CAUTION,시간대를 나눠 쓰세요,레티놀 계열과 비타민C를 함께 쓰면 자극이 겹칠 수 있어요.,The Ordinary(Deciem) 공식 병용 가이드
+하이알루로닉애씨드,세라마이드엔피,GOOD,함께 쓰면 좋아요,수분을 채우고 장벽으로 가둬주는 조합이에요.,Draelos ZD - Cosmetic Dermatology: Products and Procedures
+아스코빅애씨드,토코페롤,GOOD,함께 쓰면 좋아요,비타민E가 비타민C를 안정시켜 항산화 효과가 더 오래가요.,"Lin FH et al., J Invest Dermatol 2005"
+아스코빅애씨드,페룰릭애씨드,GOOD,함께 쓰면 좋아요,페룰릭애씨드가 비타민C가 쉽게 변하는 것을 막아줘요.,"Lin FH et al., J Invest Dermatol 2005"
+레티놀,나이아신아마이드,GOOD,함께 쓰면 좋아요,나이아신아마이드가 레티놀 때문에 생기는 따가움을 덜어줘요.,Paula's Choice 성분 사전 - 나이아신아마이드
+레티놀,세라마이드엔피,GOOD,함께 쓰면 좋아요,장벽을 채워줘서 레티놀에 적응하기가 수월해져요.,American Academy of Dermatology - 레티노이드 사용 가이드
+나이아신아마이드,하이알루로닉애씨드,GOOD,함께 쓰면 좋아요,수분을 채우면서 피부결을 함께 정돈해줘요.,Paula's Choice 성분 사전 - 나이아신아마이드
+마데카소사이드,판테놀,GOOD,함께 쓰면 좋아요,진정 성분끼리 만나 붉어진 피부를 달래줘요.,Draelos ZD - Cosmetic Dermatology: Products and Procedures
+글라이콜릭애씨드,세라마이드엔피,GOOD,함께 쓰면 좋아요,각질을 정리한 다음 장벽을 채워주는 순서 조합이에요.,Draelos ZD - Cosmetic Dermatology: Products and Procedures
