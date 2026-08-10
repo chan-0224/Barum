@@ -8,10 +8,12 @@
 --   격리는 전부 auth.uid() 기준이라 users 테이블 유무와 무관하게 동작한다.
 
 -- ── M1: 내 화장대 ────────────────────────────────────────────────
+-- catalog_id / source는 schema/catalog.sql이 기존 DB에 추가한다.
+-- 신규 설치라면 catalog.sql을 먼저 적용한 뒤 이 파일을 돌려야 FK가 걸린다.
 create table if not exists products (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users(id) on delete cascade,
-  name        text not null,              -- 사용자 입력 또는 OCR 추정. "수분 세럼" 수준이면 충분
+  name        text not null,              -- 카탈로그 제품명 또는 OCR 별칭
   image_path  text,                       -- 비공개 버킷 'labels' 내 경로. 원칙 5
   created_at  timestamptz not null default now()
 );
