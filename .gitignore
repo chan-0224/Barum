@@ -16,6 +16,8 @@ out/
 # macOS
 .DS_Store
 
-# 기획·전략 문서 — Public 레포 제외 (심사위원이 보는 곳)
-# 심사 대응 전략과 팀원 실명이 들어 있다. 팀 내부 공유는 별도 채널로.
-docs/
+# Public 레포 제외 — 심사위원이 보는 곳이다
+# PLAN: 심사 배점 분석·대응 전략  /  TASKS: 내부 진행 상황과 팀원 실명
+# 나머지(API·SCREENS·DATA)는 팀원이 봐야 하므로 커밋한다
+docs/PLAN.md
+docs/TASKS.md
