@@ -81,7 +81,17 @@ GET /catalog/products?q=토너&category=TONER&page=0&size=20
 }
 ```
 
-`keyIngredients`는 `position` 앞쪽 기준 최대 3개.
+`keyIngredients`는 **베이스·용매·점증제 계열을 제외하고** `position` 앞쪽 기준 최대 3개.
+
+전성분표는 함량 순이라 그냥 앞 3개를 뽑으면 모든 제품이 `정제수 · 글리세린 · 부틸렌글라이콜`로 똑같아진다. 제외 목록은 `key_ingredient_excluded` 테이블에 있고, Spring은 미리 만들어 둔 뷰를 그대로 조회하면 된다 (제외 로직을 Java에 넣지 말 것 — 목록이 바뀌면 재배포해야 한다):
+
+```sql
+select std_name from catalog_key_ingredients
+ where catalog_id = ? and rank <= 3
+ order by rank;
+```
+
+정의는 `barum-be/schema/key_ingredients.sql`. **이 제외는 화면 표시용일 뿐이고, 성분 충돌 판정은 제외 없이 전체 성분을 본다.**
 
 ## 3. 내 화장대 목록 — 화면 6
 
