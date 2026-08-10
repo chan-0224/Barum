@@ -11,6 +11,7 @@ create table if not exists ingredient_rules (
   label         text not null,   -- "같이 쓰지 마세요" — 배지에 그대로 노출
   reason        text not null,   -- 한 문장. 사용자에게 그대로 보인다
   source        text not null,   -- 근거 출처. 발표에서 "근거 기반"의 증거로 쓴다
+  verified      boolean not null default false,  -- 원문을 열어 확인했는가. 발표 인용은 true만
   created_at    timestamptz not null default now(),
   unique (ingredient_a, ingredient_b),
 
@@ -28,6 +29,9 @@ create table if not exists ingredient_rules (
 -- 조회 패턴: ingredient_a IN (...) AND ingredient_b IN (...)
 -- unique 인덱스가 (a, b) 순이라 a 조건이 인덱스를 탄다. b는 필터.
 create index if not exists ingredient_rules_b_idx on ingredient_rules (ingredient_b);
+
+-- 이미 만든 테이블에 verified를 추가할 때 (최초 생성이면 위 create가 처리한다)
+alter table ingredient_rules add column if not exists verified boolean not null default false;
 
 alter table ingredient_rules enable row level security;
 

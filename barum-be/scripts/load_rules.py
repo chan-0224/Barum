@@ -39,6 +39,7 @@ def load_csv(path: Path) -> list[dict]:
                 "label": row["label"].strip(),
                 "reason": row["reason"].strip(),
                 "source": row["source"].strip(),
+                "verified": row["verified"].strip().lower() == "true",
             })
     return rows
 
@@ -82,14 +83,34 @@ def fetch_known_names(names: set[str]) -> set[str]:
 
 
 def upsert(rows: list[dict]) -> None:
+    """CSV를 DB에 반영한다. CSV가 유일한 원본이므로 CSV에서 빠진 룰은 DB에서도 지운다.
+
+    지우지 않으면 근거가 틀려서 뺀 룰이 DB에 남아 계속 판정된다. M3 기준이 "오답 0"이라 치명적.
+    """
     url, key = os.environ["SUPABASE_URL"].rstrip("/"), os.environ["SUPABASE_SERVICE_KEY"]
+    h = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
     r = httpx.post(f"{url}/rest/v1/ingredient_rules?on_conflict=ingredient_a,ingredient_b",
-                   headers={"apikey": key, "Authorization": f"Bearer {key}",
-                            "Content-Type": "application/json",
-                            "Prefer": "resolution=merge-duplicates,return=minimal"},
+                   headers={**h, "Prefer": "resolution=merge-duplicates,return=minimal"},
                    json=rows, timeout=60)
     if r.is_error:
         raise RuntimeError(f"적재 실패 HTTP {r.status_code}: {r.text[:400]}")
+
+    r = httpx.get(f"{url}/rest/v1/ingredient_rules",
+                  params={"select": "ingredient_a,ingredient_b"}, headers=h, timeout=30)
+    if r.is_error:
+        raise RuntimeError(f"기존 룰 조회 실패 HTTP {r.status_code}: {r.text[:300]}")
+
+    keep = {(x["ingredient_a"], x["ingredient_b"]) for x in rows}
+    stale = [(x["ingredient_a"], x["ingredient_b"]) for x in r.json()
+             if (x["ingredient_a"], x["ingredient_b"]) not in keep]
+    for a, b in stale:
+        d = httpx.delete(f"{url}/rest/v1/ingredient_rules",
+                         params={"ingredient_a": f"eq.{a}", "ingredient_b": f"eq.{b}"},
+                         headers=h, timeout=30)
+        if d.is_error:
+            raise RuntimeError(f"삭제 실패 [{a}+{b}] HTTP {d.status_code}: {d.text[:200]}")
+        print(f"  CSV에서 빠진 룰 삭제: {a} + {b}", file=sys.stderr)
 
 
 def main() -> None:
@@ -108,7 +129,9 @@ def main() -> None:
         sys.exit(1)
 
     by_level = {lv: sum(1 for r in rows if r["level"] == lv) for lv in sorted(LEVELS)}
+    n_verified = sum(1 for r in rows if r["verified"])
     print(f"검증 통과 — {by_level}")
+    print(f"출처 원문 확인: {n_verified}/{len(rows)}건 (verified=true만 발표 인용 가능)")
 
     if "--check-only" in sys.argv:
         return
