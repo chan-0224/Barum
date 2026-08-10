@@ -7,7 +7,10 @@ create table if not exists ingredient_rules (
   id            bigserial primary key,
   ingredient_a  text not null references ingredients(std_name),
   ingredient_b  text not null references ingredients(std_name),
-  level         text not null check (level in ('AVOID', 'CAUTION', 'GOOD')),
+  -- 2단계만 쓴다. 바름은 아침 루틴만 제시하므로 "시간대를 나눠 쓰세요"(구 CAUTION)라는
+  -- 지시 자체가 성립하지 않는다. 오늘 같이 바르지 말 것인가, 같이 발라도 좋은가 둘뿐이다.
+  level         text not null
+                constraint ingredient_rules_level_check check (level in ('AVOID', 'GOOD')),
   label         text not null,   -- "같이 쓰지 마세요" — 배지에 그대로 노출
   reason        text not null,   -- 한 문장. 사용자에게 그대로 보인다
   source        text not null,   -- 근거 출처. 발표에서 "근거 기반"의 증거로 쓴다
@@ -30,8 +33,14 @@ create table if not exists ingredient_rules (
 -- unique 인덱스가 (a, b) 순이라 a 조건이 인덱스를 탄다. b는 필터.
 create index if not exists ingredient_rules_b_idx on ingredient_rules (ingredient_b);
 
--- 이미 만든 테이블에 verified를 추가할 때 (최초 생성이면 위 create가 처리한다)
+-- 이미 만든 테이블에 반영할 때 (최초 생성이면 위 create가 처리한다)
 alter table ingredient_rules add column if not exists verified boolean not null default false;
+
+-- CAUTION 폐지: 3단계 → 2단계
+delete from ingredient_rules where level = 'CAUTION';
+alter table ingredient_rules drop constraint if exists ingredient_rules_level_check;
+alter table ingredient_rules add constraint ingredient_rules_level_check
+  check (level in ('AVOID', 'GOOD'));
 
 alter table ingredient_rules enable row level security;
 

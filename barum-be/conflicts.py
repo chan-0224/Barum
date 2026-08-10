@@ -22,8 +22,9 @@ try:
 except ImportError:
     pass
 
-# 배지 정렬 순서. 위험한 것이 위로 온다
-_LEVEL_ORDER = {"AVOID": 0, "CAUTION": 1, "GOOD": 2}
+# 배지 정렬 순서. 위험한 것이 위로 온다.
+# 2단계뿐이다 — 바름은 아침 루틴만 제시하므로 "시간대 분리"(구 CAUTION)가 성립하지 않는다.
+_LEVEL_ORDER = {"AVOID": 0, "GOOD": 1}
 
 
 def _in_list(names: set[str]) -> str:

@@ -24,7 +24,7 @@ except ImportError:
     pass
 
 CSV_PATH = Path(__file__).resolve().parent.parent / "data" / "ingredient_rules.csv"
-LEVELS = {"AVOID", "CAUTION", "GOOD"}
+LEVELS = {"AVOID", "GOOD"}  # CAUTION 폐지 — data/README.md 참조
 
 
 def load_csv(path: Path) -> list[dict]:
