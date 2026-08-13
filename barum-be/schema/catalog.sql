@@ -11,6 +11,9 @@ create table if not exists catalog_products (
                    check (category in ('CLEANSER', 'TONER', 'SERUM', 'CREAM', 'SUNSCREEN')),
   image_url        text,
   raw_ingredients  text,   -- 수집 원문(전성분 문자열). 여기서 아래 테이블을 채운다
+  -- 쇼핑몰 표기 그대로의 제품명. name은 마케팅 문구를 걷어낸 정리본이다.
+  -- 정규화 규칙을 고쳐 다시 돌리려면 원문이 있어야 한다
+  name_raw         text,
   created_at       timestamptz not null default now(),
 
   -- 같은 브랜드에 같은 이름이 두 번 들어가는 사고를 막는다. 수집을 여러 번 돌려도 안전
@@ -39,6 +42,10 @@ create policy "catalog read for all" on catalog_products for select using (true)
 
 drop policy if exists "catalog ingredients read for all" on catalog_product_ingredients;
 create policy "catalog ingredients read for all" on catalog_product_ingredients for select using (true);
+
+
+-- 이미 만든 테이블에 반영할 때 (최초 생성이면 위 create가 처리한다)
+alter table catalog_products add column if not exists name_raw text;
 
 
 -- ── products에 출처 컬럼 추가 (core.sql의 정의와 맞춘다) ──────────────
