@@ -38,6 +38,37 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * RLS 위반(SQLSTATE 42501). Spring이 BadSqlGrammarException으로 감싸므로 기본 핸들러에
+     * 두면 502 EXTERNAL_API_ERROR로 나간다 — 프론트는 "외부 API 실패"로 해석해 재시도하고,
+     * 성공할 리 없는 재시도를 반복한다. 그래서 따로 잡는다.
+     *
+     * <p>우리 설계에서는 쓰기 시 user_id를 항상 검증된 JWT에서 채우므로 <b>이게 뜨면 서버 버그다.</b>
+     * 그래서 ERROR로 남긴다. 다만 클라이언트에게는 "네 것이 아니다"가 정확한 답이라 404를 준다.
+     */
+    @ExceptionHandler(org.springframework.dao.DataAccessException.class)
+    public ResponseEntity<Map<String, String>> handleDataAccess(
+            org.springframework.dao.DataAccessException e) {
+        if (isRlsViolation(e)) {
+            log.error("RLS 위반 — 코드가 소유하지 않은 행을 쓰려 했다", e);
+            return body(ErrorCode.PRODUCT_NOT_FOUND, "요청한 데이터를 찾을 수 없습니다.");
+        }
+        log.error("DB 오류", e);
+        return body(ErrorCode.EXTERNAL_API_ERROR, "일시적인 오류가 발생했습니다.");
+    }
+
+    private boolean isRlsViolation(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException sql && "42501".equals(sql.getSQLState())) {
+                return true;
+            }
+            if (t == t.getCause()) {
+                break;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 마지막 그물. 스택트레이스는 서버 로그에만 남기고 클라이언트에는 코드만 준다.
      * 예외 메시지를 그대로 흘리면 DB 구조나 내부 URL이 노출된다.
      */

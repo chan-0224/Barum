@@ -158,11 +158,16 @@ POST /uploads
 ```
 
 ```json
-{ "uploadUrl": "https://...signed...", "storagePath": "ocr/{userId}/{uuid}.jpg", "expiresIn": 300 }
+{ "uploadUrl": "https://...signed...", "bucket": "labels", "storagePath": "{userId}/{uuid}.jpg", "expiresIn": 300 }
 ```
 
-프론트가 `uploadUrl`로 직접 PUT 업로드 후 `storagePath`를 다음 요청에 사용.
-경로 규칙: OCR `ocr/{userId}/{uuid}.jpg` / 셀카 `selfie/{userId}/{date}.jpg`. 버킷은 비공개.
+프론트가 `uploadUrl`로 직접 PUT 업로드 후 `bucket` + `storagePath`를 다음 요청에 사용.
+
+**경로 규칙**: 용도는 **버킷**으로 나눈다 — OCR은 `labels`, 셀카는 `selfies`. 둘 다 비공개.
+경로는 `{userId}/{파일명}` — OCR `{userId}/{uuid}.jpg`, 셀카 `{userId}/{date}.jpg`.
+
+> Storage 정책이 `(storage.foldername(name))[1] = auth.uid()`라 **첫 폴더가 반드시 유저 ID여야 한다.**
+> `ocr/{userId}/...` 처럼 앞에 용도를 두면 업로드가 거부된다(`barum-be/schema/core.sql`).
 
 ## 6. 전성분표 인식 — 화면 9·10
 

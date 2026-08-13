@@ -67,17 +67,27 @@ public class SecurityConfig {
         return source;
     }
 
-    /** SecurityContext에서 익명 세션의 user_id(sub)를 꺼낸다. */
-    public static String currentUserId() {
+    private static org.springframework.security.oauth2.jwt.Jwt token() {
         var auth = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication();
         if (auth instanceof org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken t) {
-            Map<String, Object> claims = t.getToken().getClaims();
-            Object sub = claims.get("sub");
-            if (sub != null) {
-                return sub.toString();
-            }
+            return t.getToken();
         }
         throw new com.barum.common.ApiException(com.barum.common.ErrorCode.UNAUTHORIZED);
+    }
+
+    /** 익명 세션의 user_id(sub). 이 값이 곧 DB의 auth.uid()다. */
+    public static String currentUserId() {
+        Map<String, Object> claims = token().getClaims();
+        Object sub = claims.get("sub");
+        if (sub == null) {
+            throw new com.barum.common.ApiException(com.barum.common.ErrorCode.UNAUTHORIZED);
+        }
+        return sub.toString();
+    }
+
+    /** 원본 JWT 문자열. Storage를 사용자 권한으로 호출할 때 그대로 실어 보낸다. */
+    public static String currentJwt() {
+        return token().getTokenValue();
     }
 }

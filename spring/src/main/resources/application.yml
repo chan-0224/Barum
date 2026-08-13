@@ -20,6 +20,9 @@ spring:
           # 익명 세션 토큰을 공개키로 검증한다. JWT 시크릿을 서버가 들고 있지 않아도 된다.
           jwk-set-uri: ${SUPABASE_URL}/auth/v1/.well-known/jwks.json
           issuer-uri: ${SUPABASE_URL}/auth/v1
+          # Supabase는 ES256(EC P-256)으로 서명한다. 이 줄이 없으면 Spring이 RS256만
+          # 허용해 모든 토큰이 401로 떨어진다 — 서명 검증 실패라 로그에도 안 남는다.
+          jws-algorithms: [ES256, RS256]
 
 barum:
   cors:
@@ -30,6 +33,8 @@ barum:
     internal-key: ${AI_INTERNAL_KEY:}
   supabase:
     url: ${SUPABASE_URL}
+    # Storage 호출 시 apikey 헤더용. 실제 권한은 사용자 JWT가 결정한다(service_role 아님)
+    anon-key: ${SUPABASE_ANON_KEY}
 
 server:
   port: ${PORT:8080}
