@@ -11,18 +11,26 @@
 
 | 담당 | 범위 |
 |---|---|
-| 이찬영 | 성분 데이터·룰테이블, DB 스키마, 날씨 모듈, 디자인, 인프라 |
-| 왕종휘 | Spring 메인 API (CRUD·카탈로그·기록), 제품 카탈로그 수집 |
+| 왕종휘 | Spring **CRUD만** (제품 목록·등록·삭제) + 올리브영 크롤링 |
 | 구교승 | FastAPI AI 서버 (Vision OCR, 루틴 생성, 피부 분석) |
 | 이영규 | 프론트 (Next.js 모바일 웹) |
 | 임나현 | 디자인 |
+| **이찬영 + Claude Code** | **나머지 전부** — 성분 데이터·룰테이블, DB 스키마, 인프라, 배포, 디자인, 그리고 **Spring의 CRUD 외 엔드포인트** |
 
-**이 레포에서 Claude Code의 작업 범위는 이찬영 담당분 + AI 서버 보조.** Spring 코드와 프론트 코드는 건드리지 않는다.
+### Spring 담당 경계 (`spring/`)
+
+| 범위 | 담당 | `docs/API.md` 번호 |
+|---|---|---|
+| 제품 목록·등록·삭제 (CRUD) | 왕종휘 | 3 · 4 · 7 |
+| 그 외 전부 | 이찬영 + Claude Code | 1 날씨 · 2 카탈로그 검색 · 5 업로드 URL · 9~12 기록 · 13 전체 삭제 |
+| OCR·루틴 (AI 서버 몫) | 구교승 | 6 · 8 — Spring은 프록시만 |
+
+**프론트 코드(Next.js)는 건드리지 않는다.** Spring은 위 경계 안에서 작업한다.
 
 ## 스택
 
 - 프론트: Next.js (모바일 웹, 390px 기준)
-- 메인 API: Spring Boot (Java)
+- 메인 API: Spring Boot 3.x + Java 21, Gradle — `spring/`
 - AI 서버: FastAPI (Python 3.11+) — `barum-be/`
 - DB/인프라: Supabase (PostgreSQL + Storage + RLS + 익명 세션)
 - AI: GPT-4o Vision
@@ -35,6 +43,7 @@
 2. **보유 제품 밖 언급 금지.** 루틴 생성 LLM 컨텍스트에는 해당 유저 화장대에 등록된 제품만 넣는다.
 3. **의료 표현 통제.** 병명 진단 표현("여드름입니다") 금지, 상태 확인 표현("홍조가 감지됩니다")만. 이상 신호 지속 시 전문의 진료 권장 안내.
 4. **로그인 없음.** Supabase anonymous sign-in. 회원가입/로그인 UI를 만들지 말 것. 격리는 RLS(`auth.uid() = user_id`).
+   - **Spring은 `service_role` 키를 쓰지 않는다.** 그 키는 RLS를 우회하므로 격리가 앱 코드 품질에 의존하게 된다. 트랜잭션마다 `set local role authenticated` + JWT의 `sub`를 세팅해 **RLS가 실제로 걸린 상태로** 질의한다. `service_role`은 운영 스크립트(`load_*.py`) 전용.
 5. **얼굴 사진은 민감정보.** Storage 비공개 버킷 + Signed URL. 공개 버킷 금지.
 6. **FastAPI는 DB에 쓰지 않는다.** 읽고 결과만 반환, 저장은 Spring이 담당.
 7. **프로덕트는 바름 단독으로 완결.** AAC/WHS 브랜드를 화면·코드에 넣지 않는다. 슈퍼앱 연계는 발표 자료에서만.

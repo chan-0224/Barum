@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: barum
+
+  datasource:
+    # Supabase Transaction Pooler (포트 6543). Dashboard > Project Settings > Database > Connection string
+    #   jdbc:postgresql://aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres?user=postgres.<project-ref>
+    # pgbouncer transaction 모드라 서버사이드 prepared statement를 쓸 수 없다.
+    # 반드시 prepareThreshold=0 을 붙일 것 — 없으면 간헐적으로 "prepared statement already exists"가 뜬다.
+    url: ${SUPABASE_JDBC_URL}
+    password: ${SUPABASE_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # 익명 세션 토큰을 공개키로 검증한다. JWT 시크릿을 서버가 들고 있지 않아도 된다.
+          jwk-set-uri: ${SUPABASE_URL}/auth/v1/.well-known/jwks.json
+          issuer-uri: ${SUPABASE_URL}/auth/v1
+
+barum:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  ai:
+    # FastAPI AI 서버. 날씨 컨텍스트와 OCR·루틴 프록시에 쓴다
+    base-url: ${AI_BASE_URL:http://localhost:8000}
+    internal-key: ${AI_INTERNAL_KEY:}
+  supabase:
+    url: ${SUPABASE_URL}
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.barum: INFO

@@ -21,3 +21,7 @@ out/
 # 나머지(API·SCREENS·DATA)는 팀원이 봐야 하므로 커밋한다
 docs/PLAN.md
 docs/TASKS.md
+
+# Java / Gradle
+build/
+.gradle/
