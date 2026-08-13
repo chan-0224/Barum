@@ -5,7 +5,27 @@
 ```
 인터넷 → Traefik(80/443) ─┬─ /api/v1      → Spring   :8080
                           └─ /internal/v1 → FastAPI  :8000
+                     ↑
+              socket-proxy (컨테이너 목록 조회 전용)
 ```
+
+## ⚠ 먼저 읽을 것 — 8/13 맥미니 리허설에서 잡은 함정 3개
+
+서버에서 처음 만나면 시간을 버린다. 셋 다 **compose 파일에 이미 반영돼 있으니 건드리지 말 것.**
+
+**1. Traefik은 v3.7 이상이어야 한다.** 그 아래 버전은 도커 API를 `/v1.24/`로 부르는데
+Docker 29는 1.40 미만을 400으로 거부한다. 그러면 라우터가 하나도 등록되지 않아
+**모든 요청이 404**가 되는데, 에러는 Traefik 로그에만 남고 응답은 평범한 404라
+원인을 찾기 어렵다. `DOCKER_API_VERSION` 환경변수로는 안 고쳐진다(초기 version 호출에 반영되지 않음).
+`get.docker.com`은 최신 Docker를 설치하므로 **서버에서도 그대로 재현된다.**
+
+**2. 도커 소켓을 Traefik에 직접 물리지 않는다.** `socket-proxy`를 거친다.
+Docker Desktop 29에서 직접 마운트가 400을 돌려준 것이 계기였지만, 보안상으로도 이쪽이 맞다 —
+도커 소켓은 사실상 root 권한인데 컨테이너 목록만 읽으면 되는 Traefik에 전부 줄 이유가 없다.
+읽기 계열만 열고 생성·삭제·재시작은 막아 뒀다.
+
+**3. 호스트 포트는 `${HTTP_PORT:-80}`이다.** 서버에서는 그대로 80을 쓴다.
+로컬에 이미 80을 점유한 스택이 있을 때만 `HTTP_PORT=8081`처럼 비켜간다.
 
 ## ⚠ 아키텍처 — 맥미니에서 빌드한 이미지는 서버에서 안 돈다
 
@@ -23,6 +43,7 @@ HTTP만 뜬다. 인증서는 도메인이 필요해서 서버에서만 붙는다
 
 ```bash
 cp .env.production.example .env.production   # 값 채우기
+echo 'HTTP_PORT=8081' >> .env.production     # 로컬에 80을 쓰는 스택이 있을 때만
 docker compose --env-file .env.production up -d --build
 curl http://localhost/api/v1/health
 curl "http://localhost/api/v1/catalog/products?size=3"
@@ -34,10 +55,13 @@ compose 자신의 `${DOMAIN}` 치환에는 쓰이지 않는다. 빼면 라우팅
 
 리허설에서 확인할 것 — **서버에서 처음 겪으면 시간을 버린다**
 
-- [ ] Spring이 Supabase에 붙는가 (`/api/v1/health` 의 `db: UP`)
-- [ ] 익명 토큰으로 인증이 통과하는가 (ES256 검증)
-- [ ] 컨테이너 메모리 한도 안에서 도는가 — `docker stats`
-- [ ] 재시작 후 자동 복구되는가 — `docker compose restart`
+- [x] Spring이 Supabase에 붙는가 (`/api/v1/health` 의 `db: UP`) — 확인
+- [x] 익명 토큰으로 인증이 통과하는가 (ES256) — 타임라인·업로드 URL 200
+- [x] 카탈로그 조회와 `keyIngredients` 뷰 — SERUM 38건, 검색 정상
+- [x] 컨테이너 메모리 — spring 190MB/1.25GB, traefik 21MB/128MB (배정의 15%)
+- [x] FastAPI 없이도 나머지가 도는가 — 날씨만 502, 그 외 정상
+
+**8/13 리허설 결과: 빌드 41초 / 이미지 344MB.** FastAPI를 뺀 전 구간 통과.
 
 ## 서버 배포 (8/18~)
 
@@ -48,7 +72,13 @@ sudo usermod -aG docker $USER && newgrp docker
 
 # 2. 코드 + 환경변수
 git clone https://github.com/chan-0224/Barum.git && cd Barum
+cp .env.production.example .env.production
 vi .env.production          # DOMAIN, ACME_EMAIL 포함해 전부 채운다
+#
+# .env.production 은 커밋되지 않는다(Public 레포). 서버에서 직접 만들어야 한다.
+# 값은 로컬 spring/.env 와 barum-be/.env 에 있다. 안전한 경로로 옮길 것 —
+# Slack DM·메신저는 로그가 남는다. scp 를 쓰거나 화면 보고 직접 입력한다.
+# JDBC URL은 & 때문에 반드시 따옴표로 감싼다.
 
 # 3. 방화벽 — HTTP-01 챌린지가 80을 쓴다. 막혀 있으면 발급이 실패한다
 sudo ufw allow 80,443/tcp
@@ -68,12 +98,13 @@ Let's Encrypt 레이트 리밋(주 5회/도메인)에 걸려 그 주 내내 인�
 
 ## 메모리 배분 (4GB)
 
-| 서비스 | 한도 | 비고 |
-|---|---|---|
-| traefik | 128m | |
-| spring | 1280m | 힙은 65%(~830m). 나머지는 메타스페이스·스레드 몫 |
-| fastapi | 640m | 외부 API 대기가 대부분이라 여유 있다 |
-| **합계** | **2048m** | 나머지 ~2GB는 Ubuntu + 도커 데몬 |
+| 서비스 | 한도 | 실사용(리허설) | 비고 |
+|---|---|---|---|
+| traefik | 128m | 21m | |
+| socket-proxy | 64m | 4m | 컨테이너 목록 조회만 중계 |
+| spring | 1280m | 190m | 힙은 65%(~830m). 나머지는 메타스페이스·스레드 몫 |
+| fastapi | 640m | — | 외부 API 대기가 대부분이라 여유 있다 |
+| **합계** | **2112m** | | 나머지 ~1.9GB는 Ubuntu + 도커 데몬 |
 
 JVM에 `-Xmx`를 직접 주지 않고 `MaxRAMPercentage`를 쓴다. 컨테이너 한도를 바꾸면
 힙도 따라 움직인다. `-XX:+ExitOnOutOfMemoryError`라 힙이 터지면 좀비로 남지 않고
@@ -111,3 +142,5 @@ FastAPI가 없으면 날씨(API.md 1)가 502로 떨어진다. Spring은 정상 �
 | 인증서 발급 실패 | DNS 미전파 또는 80 포트 차단 |
 | Spring OOM 재시작 반복 | `mem_limit`을 올리거나 `MaxRAMPercentage`를 낮춘다 |
 | 404만 나오고 로그에 라우팅 없음 | `--env-file` 누락. `Host(``)`가 되어 매칭이 안 된다 |
+| **모든 요청 404 + Traefik 로그에 `API returned a 400`** | **Traefik이 v3.7 미만.** 도커 API 버전 거부 |
+| `Bind for 0.0.0.0:80 failed` | 80을 쓰는 다른 스택이 있다. `HTTP_PORT`로 비켜간다 |

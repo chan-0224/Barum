@@ -21,6 +21,7 @@ services:
   traefik:
     command:
       - --providers.docker=true
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
       - --providers.docker.exposedbydefault=false
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
@@ -37,7 +38,6 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       # 발급받은 인증서. 이게 날아가면 재발급이라 레이트 리밋을 깎는다
       - ./letsencrypt:/letsencrypt
 
