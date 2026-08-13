@@ -1,0 +1,78 @@
+# 로컬 리허설용 (맥미니). HTTP만 — 인증서는 도메인이 필요해서 서버에서만 붙는다.
+# 운영은 docker-compose.prod.yml 을 겹쳐 올린다:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# 메모리 배분 (서버 4GB 기준)
+#   traefik 128m + spring 1280m + fastapi 640m = 2048m
+#   나머지 ~2GB는 Ubuntu와 도커 데몬 몫. 넉넉하게 남긴다
+
+services:
+  traefik:
+    image: traefik:v3.2
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      # 라벨을 붙인 컨테이너만 노출한다. 실수로 다른 컨테이너가 열리지 않게
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --accesslog=true
+      - --log.level=INFO
+    ports:
+      - "80:80"
+    volumes:
+      # 읽기 전용. 도커 소켓은 사실상 루트 권한이라 쓰기로 열지 않는다
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    mem_limit: 128m
+    networks: [barum]
+
+  spring:
+    build:
+      context: ./spring
+    restart: unless-stopped
+    env_file: [.env.production]
+    environment:
+      - PORT=8080
+    expose:
+      - "8080"
+    mem_limit: 1280m
+    healthcheck:
+      # alpine 이미지에 curl이 없다. busybox wget을 쓴다
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.spring.rule=PathPrefix(`/api/v1`)
+      - traefik.http.routers.spring.entrypoints=web
+      - traefik.http.services.spring.loadbalancer.server.port=8080
+    networks: [barum]
+
+  fastapi:
+    build:
+      context: ./barum-be
+    restart: unless-stopped
+    env_file: [.env.production]
+    expose:
+      - "8000"
+    mem_limit: 640m
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      # 루틴 SSE는 프론트가 직접 호출한다(docs/API.md 8). 그래서 외부로 열려 있어야 한다.
+      # 나머지 /internal/v1 경로는 FastAPI가 X-Internal-Key로 막는다
+      - traefik.http.routers.fastapi.rule=PathPrefix(`/internal/v1`)
+      - traefik.http.routers.fastapi.entrypoints=web
+      - traefik.http.services.fastapi.loadbalancer.server.port=8000
+      # SSE가 끊기지 않게 압축 미들웨어를 붙이지 않는다. Traefik은 기본적으로 버퍼링하지 않는다
+    networks: [barum]
+
+networks:
+  barum:

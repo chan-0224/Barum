@@ -34,7 +34,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/health", "/api/v1/health").permitAll()
                         // 카탈로그는 참조 데이터라 토큰 없이도 열어둔다. 화장대를 만들기 전에
                         // 제품을 둘러볼 수 있어야 하고, 어차피 유저 데이터가 아니다.
                         .requestMatchers("/api/v1/catalog/**").permitAll()

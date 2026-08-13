@@ -1,7 +1,8 @@
 # 환경변수 — 절대 커밋 금지 (Public 레포)
 .env
 .env.*
-!.env.example
+# 템플릿은 커밋해야 한다. 없으면 클론한 사람이 뭘 채울지 모른다
+!*.example
 
 # Python
 .venv/
@@ -25,3 +26,7 @@ docs/TASKS.md
 # Java / Gradle
 build/
 .gradle/
+
+# 배포
+.env.production
+letsencrypt/

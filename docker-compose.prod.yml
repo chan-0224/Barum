@@ -1,0 +1,58 @@
+# 운영 오버레이 — HTTPS(Let's Encrypt 자동 발급) + HTTP 리다이렉트.
+#
+#   docker compose --env-file .env.production \
+#     -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# ※ --env-file 을 빼면 안 된다. env_file: 은 변수를 컨테이너 안으로 넣어줄 뿐,
+#   아래 ${DOMAIN} 치환에는 쓰이지 않는다. 빼면 Host(``) 가 되어 아무 요청도 매칭되지 않고
+#   에러도 나지 않는다. 올리기 전에 반드시 확인할 것:
+#     docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.prod.yml \
+#       config | grep routers.spring.rule
+#
+# 선행 조건 (이게 안 되면 인증서 발급이 실패한다)
+#   1. DOMAIN 이 서버 공인 IP로 A 레코드가 걸려 있을 것
+#   2. 80·443 포트가 방화벽에서 열려 있을 것 (HTTP-01 챌린지가 80을 쓴다)
+#
+# 발급 실패를 반복하면 Let's Encrypt 레이트 리밋(주 5회/도메인)에 걸린다.
+# 도메인·DNS를 먼저 확인하고 올릴 것. 리허설은 스테이징 서버로 하는 게 안전하다:
+#   --certificatesresolvers.le.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory
+
+services:
+  traefik:
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      # 평문으로 들어오면 전부 HTTPS로 넘긴다. 얼굴 사진이 오가는 서비스다(원칙 5)
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --accesslog=true
+      - --log.level=INFO
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # 발급받은 인증서. 이게 날아가면 재발급이라 레이트 리밋을 깎는다
+      - ./letsencrypt:/letsencrypt
+
+  spring:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.spring.rule=Host(`${DOMAIN}`) && PathPrefix(`/api/v1`)
+      - traefik.http.routers.spring.entrypoints=websecure
+      - traefik.http.routers.spring.tls.certresolver=le
+      - traefik.http.services.spring.loadbalancer.server.port=8080
+
+  fastapi:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.fastapi.rule=Host(`${DOMAIN}`) && PathPrefix(`/internal/v1`)
+      - traefik.http.routers.fastapi.entrypoints=websecure
+      - traefik.http.routers.fastapi.tls.certresolver=le
+      - traefik.http.services.fastapi.loadbalancer.server.port=8000
