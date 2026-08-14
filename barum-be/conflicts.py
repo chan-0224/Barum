@@ -27,41 +27,34 @@ except ImportError:
 _LEVEL_ORDER = {"AVOID": 0, "GOOD": 1}
 
 
-def _in_list(names: set[str]) -> str:
-    """PostgREST in.(...) 값. 표준명에 쉼표가 들어간 성분이 있어 반드시 따옴표로 감싼다.
-
-    예: 2,4,5-트라이메틸아닐린 — 따옴표가 없으면 세 개 값으로 쪼개진다.
-    """
-    return "(" + ",".join('"' + n.replace('"', '""') + '"' for n in sorted(names)) + ")"
+async def _fetch_rules() -> list[dict]:
+    """룰테이블 전체. 54건이라 통째로 받아도 응답이 작다."""
+    url = os.environ["SUPABASE_URL"].rstrip("/")
+    key = os.environ["SUPABASE_ANON_KEY"]  # 읽기 전용이면 충분하다. service 키를 쓰지 않는다
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(
+            f"{url}/rest/v1/ingredient_rules",
+            params={"select": "ingredient_a,ingredient_b,level,label,reason,source"},
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        )
+    if r.is_error:
+        raise RuntimeError(f"룰 조회 실패 HTTP {r.status_code}: {r.text[:300]}")
+    return r.json()
 
 
 async def check_conflicts(ingredient_names: list[str]) -> list[dict]:
     """성분 목록에서 룰테이블에 걸리는 조합을 전부 찾는다.
 
-    쌍을 만들어 하나씩 조회하지 않는다. 룰은 두 성분이 **모두** 입력에 있을 때만 성립하므로
-    `a IN (목록) AND b IN (목록)` 한 번이면 정확히 그 집합이 나온다. 성분이 늘어도 쿼리는 1회.
-    저장된 쌍이 정렬돼 있든 아니든 결과가 같아서 순서를 신경 쓸 필요도 없다.
+    룰 전체를 받아 메모리에서 대조한다. 성분 목록을 `a IN (...) AND b IN (...)` 으로
+    보내지 않는 이유: 제품 5개면 고유 성분이 140종이 넘고, 한글 표준명이 퍼센트 인코딩되면
+    쿼리스트링이 10KB를 넘어 400이 난다. **제품 서너 개만 등록해도 M3가 통째로 죽는다.**
+    룰은 54건뿐이라 전부 받는 편이 응답도 작고 성분 수와 무관하게 일정하다.
+
+    쌍이 정렬돼 저장돼 있든 아니든 결과가 같다 — 두 성분이 모두 입력에 있는지만 본다.
     """
     names = {n.strip() for n in ingredient_names if n and n.strip()}
     if len(names) < 2:
         return []
-
-    url = os.environ["SUPABASE_URL"].rstrip("/")
-    key = os.environ["SUPABASE_ANON_KEY"]  # 읽기 전용이면 충분하다. service 키를 쓰지 않는다
-    in_list = _in_list(names)
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(
-            f"{url}/rest/v1/ingredient_rules",
-            params={
-                "ingredient_a": f"in.{in_list}",
-                "ingredient_b": f"in.{in_list}",
-                "select": "ingredient_a,ingredient_b,level,label,reason,source",
-            },
-            headers={"apikey": key, "Authorization": f"Bearer {key}"},
-        )
-    if r.is_error:
-        raise RuntimeError(f"룰 조회 실패 HTTP {r.status_code}: {r.text[:300]}")
 
     rules = [
         {
@@ -71,18 +64,14 @@ async def check_conflicts(ingredient_names: list[str]) -> list[dict]:
             "reason": row["reason"],
             "source": row["source"],
         }
-        for row in r.json()
+        for row in await _fetch_rules()
+        if row["ingredient_a"] in names and row["ingredient_b"] in names
     ]
     rules.sort(key=lambda x: (_LEVEL_ORDER.get(x["level"], 9), x["ingredients"]))
     return rules
 
 
 def _selfcheck() -> None:
-    assert _in_list({"레티놀"}) == '("레티놀")'
-    assert _in_list({"b", "a"}) == '("a","b")'
-    # 쉼표가 든 표준명이 한 값으로 유지되는지 — 따옴표가 빠지면 여기서 깨진다
-    assert _in_list({"2,4,5-트라이메틸아닐린"}) == '("2,4,5-트라이메틸아닐린")'
-
     assert asyncio.run(check_conflicts([])) == []
     assert asyncio.run(check_conflicts(["레티놀"])) == []       # 한 종이면 조합 자체가 없다
     assert asyncio.run(check_conflicts(["레티놀", "  "])) == []  # 공백은 성분으로 안 친다
