@@ -71,10 +71,137 @@ async def check_conflicts(ingredient_names: list[str]) -> list[dict]:
     return rules
 
 
+async def check_conflicts_by_product(products: dict[str, list[str]]) -> list[dict]:
+    """제품별 성분을 받아, **서로 다른 두 제품 사이**의 조합만 판정한다.
+
+    AVOID의 뜻은 "이 둘을 같이 바르지 마세요"다. 한 제품 안에 두 성분이 함께 들어 있는 건
+    제조사가 배합을 조율한 결과이므로 경고 대상이 아니다. 성분을 한 덩어리로 넘기면
+    이걸 구분할 수 없어, 레티놀과 하이드록시피나콜론레티노에이트를 같이 넣은 앰플 하나를
+    등록했을 뿐인데 "같이 쓰지 마세요"가 뜬다(실제 카탈로그 113건 중 2건이 그렇다).
+
+    반환 형태는 check_conflicts와 같다 — docs/API.md의 conflict 이벤트를 그대로 쓴다.
+    """
+    owners: dict[str, set[str]] = {}
+    for product, names in products.items():
+        for n in names:
+            n = (n or "").strip()
+            if n:
+                owners.setdefault(n, set()).add(product)
+    if len(owners) < 2:
+        return []
+
+    out = []
+    for row in await _fetch_rules():
+        a, b = row["ingredient_a"], row["ingredient_b"]
+        pa, pb = owners.get(a), owners.get(b)
+        if not pa or not pb:
+            continue
+        # 두 성분이 같은 제품에만 있으면 건너뛴다. 서로 다른 제품에 걸쳐야 성립한다
+        if not any(x != y for x in pa for y in pb):
+            continue
+        out.append({
+            "ingredients": [a, b],
+            "level": row["level"],
+            "label": row["label"],
+            "reason": row["reason"],
+            "source": row["source"],
+        })
+    out.sort(key=lambda x: (_LEVEL_ORDER.get(x["level"], 9), x["ingredients"]))
+    return out
+
+
+# 카드에 보여줄 대표명. 표준명을 그대로 쓰면 화면에서 읽히지 않는다
+# ("하이드록시피나콜론레티노에이트 + 아스코빅애씨드"). docs/SCREENS.md 화면 5가
+# 조합명을 "레티놀 + 비타민C"로 적어 둔 것도 같은 이유다.
+#
+# 테이블로 빼지 않은 이유: 룰에 쓰이는 성분이 20종뿐이고, 룰이 바뀔 때만 같이 바뀌며,
+# 소비자가 이 모듈 하나다. 룰을 추가하면 여기도 함께 본다(data/README.md에 적어 뒀다).
+_DISPLAY = {
+    "레티닐팔미테이트": "레티놀 계열",
+    "레티닐레티노에이트": "레티놀 계열",
+    "하이드록시피나콜론레티노에이트": "레티놀 계열",
+    "세라마이드엔피": "세라마이드",
+    "세라마이드엔에스": "세라마이드",
+    "세라마이드에이피": "세라마이드",
+    "아스코빅애씨드": "비타민C",
+    "토코페롤": "비타민E",
+}
+
+MAX_GOOD = 2  # AVOID는 전부 보여준다. GOOD은 배지가 넘치지 않게 제한
+
+
+async def conflict_badges(products: dict[str, list[str]]) -> list[dict]:
+    """루틴 카드에 그대로 올릴 판정 목록.
+
+    check_conflicts_by_product의 결과를 화면에 맞게 줄인다.
+      1) 같은 제품 쌍 + 같은 등급이면 1건만 남긴다.
+         세라마이드 아형이 여러 개 든 제품 하나 때문에 같은 말이 세 번 뜨는 걸 막는다.
+      2) 성분명을 대표명으로 바꾼다(_DISPLAY).
+      3) AVOID는 전부, GOOD은 MAX_GOOD건까지.
+
+    반환 형태는 docs/API.md의 conflict 이벤트와 같다. `ingredients`가 대표명이라는 점만 다르다.
+    """
+    owners: dict[str, set[str]] = {}
+    for product, names in products.items():
+        for n in names:
+            n = (n or "").strip()
+            if n:
+                owners.setdefault(n, set()).add(product)
+
+    picked: dict[tuple, dict] = {}
+    for c in await check_conflicts_by_product(products):
+        a, b = c["ingredients"]
+        pair = min(
+            ((x, y) for x in owners.get(a, ()) for y in owners.get(b, ()) if x != y),
+            default=None, key=lambda t: tuple(sorted(t)))
+        if pair is None:
+            continue
+        key = (tuple(sorted(pair)), c["level"])
+        # 대표명으로 바뀌는 성분이 적은 쪽을 남긴다 —
+        # "레티놀 + 비타민C"가 "비타민C + 레티놀 계열"보다 전달이 낫다
+        renamed = sum(1 for n in (a, b) if n in _DISPLAY)
+        if key not in picked or renamed < picked[key][0]:
+            picked[key] = (renamed, c)
+
+    out = []
+    for _, c in sorted(picked.values(), key=lambda t: (_LEVEL_ORDER.get(t[1]["level"], 9),
+                                                       t[1]["ingredients"])):
+        out.append({**c, "ingredients": [_DISPLAY.get(n, n) for n in c["ingredients"]]})
+
+    avoid = [c for c in out if c["level"] == "AVOID"]
+    good = [c for c in out if c["level"] == "GOOD"][:MAX_GOOD]
+    return avoid + good
+
+
 def _selfcheck() -> None:
     assert asyncio.run(check_conflicts([])) == []
     assert asyncio.run(check_conflicts(["레티놀"])) == []       # 한 종이면 조합 자체가 없다
     assert asyncio.run(check_conflicts(["레티놀", "  "])) == []  # 공백은 성분으로 안 친다
+
+    # 한 제품 안의 배합은 경고 대상이 아니다
+    one = asyncio.run(check_conflicts_by_product({"앰플": ["레티놀", "아스코빅애씨드"]}))
+    assert one == [], one
+    # 서로 다른 제품에 걸치면 판정한다
+    two = asyncio.run(check_conflicts_by_product({"앰플": ["레티놀"], "세럼": ["아스코빅애씨드"]}))
+    assert [c["level"] for c in two] == ["AVOID"], two
+    # 한 제품이 둘 다 갖고 있어도, 다른 제품이 한쪽을 가지면 성립한다
+    three = asyncio.run(check_conflicts_by_product(
+        {"앰플": ["레티놀", "아스코빅애씨드"], "세럼": ["아스코빅애씨드"]}))
+    assert [c["level"] for c in three] == ["AVOID"], three
+
+    # 카드용 — 같은 제품 쌍의 같은 등급은 1건, 성분명은 대표명
+    vanity = {
+        "레티놀 앰플": ["레티놀", "하이드록시피나콜론레티노에이트", "나이아신아마이드"],
+        "비타민C 세럼": ["아스코빅애씨드"],
+        "장벽 크림": ["세라마이드엔피", "세라마이드엔에스", "세라마이드에이피", "콜레스테롤"],
+    }
+    badges = asyncio.run(conflict_badges(vanity))
+    avoid = [c for c in badges if c["level"] == "AVOID"]
+    assert len(avoid) == 1, avoid                      # 앰플↔세럼에서 2건이 나오지만 1건으로
+    assert avoid[0]["ingredients"] == ["레티놀", "비타민C"], avoid[0]["ingredients"]
+    good = [c for c in badges if c["level"] == "GOOD"]
+    assert len(good) <= MAX_GOOD, good                 # 세라마이드 3아형이 3건이 되지 않는다
+    assert all("세라마이드엔" not in n for c in badges for n in c["ingredients"]), badges
     print("selfcheck ok", file=sys.stderr)
 
 
