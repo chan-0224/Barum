@@ -31,10 +31,12 @@ public class StorageClient {
 
     private final RestClient http;
     private final String anonKey;
+    private final String baseUrl;
 
     public StorageClient(@Value("${barum.supabase.url}") String supabaseUrl,
                          @Value("${barum.supabase.anon-key}") String anonKey) {
         this.anonKey = anonKey;
+        this.baseUrl = supabaseUrl + "/storage/v1";
         SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
         f.setConnectTimeout(Duration.ofSeconds(3));
         f.setReadTimeout(Duration.ofSeconds(15));
@@ -48,14 +50,29 @@ public class StorageClient {
         return spec.header("apikey", anonKey).header("Authorization", "Bearer " + jwt);
     }
 
-    /** 업로드용 서명 URL. 프론트가 여기로 직접 PUT 한다. */
+    /**
+     * Supabase는 서명 URL을 {@code /object/...} 상대경로로 돌려준다.
+     * 그대로 내보내면 프론트가 Storage 베이스 URL을 알아야 하므로 절대 URL로 만들어 준다.
+     */
+    private String absolute(Object relative) {
+        String s = String.valueOf(relative);
+        return s.startsWith("http") ? s : baseUrl + (s.startsWith("/") ? s : "/" + s);
+    }
+
+    /**
+     * 업로드용 서명 URL. 프론트가 여기로 직접 PUT 한다.
+     *
+     * <p>{@code x-upsert}가 없으면 이미 있는 경로에 대해 <b>서명 발급 단계에서</b> 409가 난다.
+     * 셀카 경로가 {@code {userId}/{날짜}.jpg}라서 같은 날 다시 찍으면 바로 걸린다
+     * (화면 2·10의 "다시 촬영"). PUT이 아니라 URL 발급이 실패하는 거라 원인을 찾기 어렵다.
+     */
     @SuppressWarnings("unchecked")
     public String signedUploadUrl(String jwt, String bucket, String path) {
         Map<String, Object> res = (Map<String, Object>) auth(
-                http.post().uri("/object/upload/sign/{bucket}/{path}", bucket, path), jwt)
+                http.post().uri("/object/upload/sign/{bucket}/{path}", bucket, path)
+                        .header("x-upsert", "true"), jwt)
                 .retrieve().body(Map.class);
-        // 응답의 url은 /storage/v1 기준 상대경로다
-        return String.valueOf(res.get("url"));
+        return absolute(res.get("url"));
     }
 
     /** 조회용 서명 URL 여러 개를 한 번에. 타임라인 30건에 30번 부르지 않는다. */
@@ -74,7 +91,7 @@ public class StorageClient {
                 Object signed = r.get("signedURL");
                 Object path = r.get("path");
                 if (signed != null && path != null) {
-                    out.put(String.valueOf(path), String.valueOf(signed));
+                    out.put(String.valueOf(path), absolute(signed));
                 }
             }
         } catch (Exception e) {

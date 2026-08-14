@@ -158,10 +158,22 @@ POST /uploads
 ```
 
 ```json
-{ "uploadUrl": "https://...signed...", "bucket": "labels", "storagePath": "{userId}/{uuid}.jpg", "expiresIn": 300 }
+{
+  "uploadUrl": "https://xxxx.supabase.co/storage/v1/object/upload/sign/labels/{userId}/{uuid}.jpg?token=...",
+  "bucket": "labels",
+  "storagePath": "{userId}/{uuid}.jpg",
+  "expiresIn": 300
+}
 ```
 
-프론트가 `uploadUrl`로 직접 PUT 업로드 후 `bucket` + `storagePath`를 다음 요청에 사용.
+**`uploadUrl`은 절대 URL이다.** 프론트가 Storage 베이스 주소를 알 필요가 없다.
+그대로 `PUT` 하면 된다 — 헤더는 `Content-Type: image/jpeg` 하나면 되고 인증 헤더는 붙이지 않는다(토큰이 URL에 들어 있다).
+
+```js
+await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+```
+
+업로드 후 **`storagePath`** 를 다음 요청(6 인식 / 8 루틴 / 9 기록 저장)에 넘긴다. `uploadUrl`은 다시 쓰지 않는다.
 
 **경로 규칙**: 용도는 **버킷**으로 나눈다 — OCR은 `labels`, 셀카는 `selfies`. 둘 다 비공개.
 경로는 `{userId}/{파일명}` — OCR `{userId}/{uuid}.jpg`, 셀카 `{userId}/{date}.jpg`.
@@ -252,15 +264,50 @@ data: {"code":"AI_TIMEOUT","message":"..."}
 
 ## 9. 기록 저장 — 화면 4
 
+**프론트가 8번 SSE로 받은 내용을 그대로 담아 보낸다.** `recordDraftId`는 쓰지 않는다 —
+FastAPI는 DB에 쓰지 않으므로(원칙 6) draft를 서버가 들고 있을 곳이 없다.
+
 ```
 POST /records
-{ "recordDraftId": "uuid" }
 ```
 
-**201** `{ "date": "2026-08-11" }`
+```json
+{
+  "date": "2026-08-14",
+  "selfiePath": "{userId}/2026-08-14.jpg",
+  "weather": { "temp": 29.0, "humidity": 38.0, "pm10": 22, "pm25": 14, "summary": "건조하고 미세먼지 보통이에요" },
+  "skin": { "summary": "턱 주변 트러블이 보여요", "flags": ["ACNE"] },
+  "routine": {
+    "apply": [
+      { "order": 1, "name": "약산성 젤 클렌저", "reason": "장벽은 남기고" },
+      { "order": 2, "name": "수분 진정 토너", "reason": "수분 먼저 채워요" }
+    ],
+    "skip": [
+      { "name": "레티놀 앰플", "reason": "비타민C와 겹쳐 자극이 커져요" }
+    ]
+  },
+  "conflicts": [
+    { "ingredients": ["레티놀", "아스코빅애씨드"], "level": "AVOID",
+      "label": "같이 쓰지 마세요", "reason": "자극이 겹칠 수 있어요", "source": "The Ordinary 공식 가이드" }
+  ]
+}
+```
 
-같은 날짜 재저장 시 덮어쓰기(upsert).
-루틴 내용 전달 방식은 AI 서버 명세 확정 후 정한다(프론트가 SSE 수신 내용을 그대로 POST하는 방식 검토 중).
+| 필드 | 필수 | 설명 |
+|---|---|---|
+| `date` | 아니오 | `YYYY-MM-DD`. 생략하면 서버가 오늘(KST)로 채운다 |
+| `selfiePath` | 아니오 | 5번에서 받은 `storagePath`. 셀카를 건너뛰었으면 생략 |
+| `weather` | 아니오 | `context` 이벤트의 `weather` 그대로 |
+| `skin` | 아니오 | `context` 이벤트의 `skin` 그대로. 건너뛰었으면 생략 |
+| `routine` | 아니오 | `item` 이벤트를 `apply`/`skip`으로 모아 담는다 |
+| `conflicts` | 아니오 | `conflict` 이벤트의 `pairs` 그대로. 없으면 `[]` |
+
+**201** `{ "date": "2026-08-14" }`
+
+- 같은 날짜에 다시 보내면 **덮어쓴다**(upsert). 루틴을 다시 받아 저장해도 기록이 늘지 않는다
+- `weather`·`skin`·`routine`·`conflicts`는 **보낸 그대로 저장되고 11번에서 그대로 돌아온다.**
+  구조를 서버가 해석하지 않으므로 AI 서버 출력이 바뀌어도 이 엔드포인트는 안 바뀐다
+- 단, 11번 응답에서 `conflicts`는 `routine` 바깥으로 갈라져 나온다
 
 ## 10. 타임라인 — 화면 11
 
