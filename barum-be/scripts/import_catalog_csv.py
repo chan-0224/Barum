@@ -32,10 +32,15 @@ CATEGORIES = ("CLEANSER", "TONER", "SERUM", "CREAM", "SUNSCREEN")
 # ── 제품명 ──────────────────────────────────────────────────
 _BRACKET = re.compile(r"^\s*(\[[^\]]*\]\s*)+")
 _PAREN = re.compile(r"\s*\([^)]*\)")
-_VOLUME = re.compile(r"\s*\d+(\.\d+)?\s*(\+\s*\d+(\.\d+)?\s*)?(ml|mL|ML|g|G|kg|매|정|개입|개)\b")
+# 단위 뒤가 한글이면 \b가 성립하지 않는다("160ml기획"). 영문자만 배제하고,
+# "160mlx2"처럼 수량이 붙는 형태도 함께 먹는다
+_VOLUME = re.compile(
+    r"\s*\d+(\.\d+)?\s*(\+\s*\d+(\.\d+)?\s*)?(ml|mL|ML|g|G|kg|매|정|개입|개)"
+    r"(\s*[xX]\s*\d+)?(?![a-zA-Z])")
 _PROMO = re.compile(
     r"\s*(단독기획|리필기획|한정기획|기획|증정|단품|대용량|한정|리뉴얼|NEW|new"
-    r"|\d+\s*입|\d+\s*종\s*택\s*\d+|\d+\s*종|택\s*\d+|1\s*\+\s*1|\d\+\d)")
+    r"|본품|리필|더블|듀오|트리플"
+    r"|\d+\s*입|\d+\s*종\s*택\s*\d+|\d+\s*종|택\s*\d+|1\s*\+\s*1|\d\+\d|[xX]\s*\d+)")
 
 
 def clean_name(name: str, brand: str) -> str:
@@ -98,8 +103,11 @@ _RULES = [
 
 
 def classify(name: str, current: str) -> str:
+    # 띄어쓰기를 지운 형태로도 본다. "워터프루프 선 크림"이 선크림으로 안 잡히면
+    # 뒤의 CREAM 규칙에 걸려 선크림이 크림으로 분류된다
+    squeezed = name.replace(" ", "")
     for cat, words in _RULES:
-        if any(w in name for w in words):
+        if any(w in name or w in squeezed for w in words):
             return cat
     return current if current in CATEGORIES else "SERUM"
 

@@ -51,7 +51,38 @@ insert into key_ingredient_excluded (std_name, category) values
   -- 향·색소·부형
   ('향료', 'FRAGRANCE_COLOR'), ('리모넨', 'FRAGRANCE_COLOR'), ('리날룰', 'FRAGRANCE_COLOR'),
   ('제라니올', 'FRAGRANCE_COLOR'), ('마이카', 'FRAGRANCE_COLOR'), ('실리카', 'FRAGRANCE_COLOR'),
-  ('적색201호', 'FRAGRANCE_COLOR'), ('황색4호', 'FRAGRANCE_COLOR')
+  ('적색201호', 'FRAGRANCE_COLOR'), ('황색4호', 'FRAGRANCE_COLOR'),
+
+  -- ── 실데이터 114건을 보고 추가한 것 (2026-08-14) ──────────────
+  -- 유기자차 선크림은 다이부틸아디페이트가, 클렌저는 지방산 비누 베이스가 1순위로 올라왔다.
+  -- 제형을 만드는 재료라 "주요 성분"으로 보여줄 값이 없다.
+  -- SOLVENT는 용제뿐 아니라 에몰리언트(제형을 만드는 기름)까지 포함한다
+  ('카프릴릭/카프릭트라이글리세라이드', 'SOLVENT'), ('다이부틸아디페이트', 'SOLVENT'),
+  ('하이드로제네이티드폴리데센', 'SOLVENT'), ('다이카프릴릴에터', 'SOLVENT'),
+  ('하이드로제네이티드폴리아이소부텐', 'SOLVENT'), ('트라이에틸헥사노인', 'SOLVENT'),
+  ('에톡시다이글라이콜', 'SOLVENT'), ('다이에톡시에틸석시네이트', 'SOLVENT'),
+  ('프로필헵틸카프릴레이트', 'SOLVENT'), ('다이아이소프로필세바케이트', 'SOLVENT'),
+  ('코코-카프릴레이트/카프레이트', 'SOLVENT'), ('아이소프로필미리스테이트', 'SOLVENT'),
+  ('다이카프릴릴카보네이트', 'SOLVENT'), ('세틸에틸헥사노에이트', 'SOLVENT'),
+  ('부틸렌글라이콜다이카프릴레이트/다이카프레이트', 'SOLVENT'), ('다이메틸아이소소바이드', 'SOLVENT'),
+  ('폴리글리세릴-3메틸글루코오스다이스테아레이트', 'SOLVENT'),
+
+  ('폴리메틸실세스퀴옥세인', 'SILICONE'), ('비닐다이메티콘', 'SILICONE'),
+  ('카프릴릴메티콘', 'SILICONE'), ('라우릴피이지-9폴리다이메틸실록시에틸다이메티콘', 'SILICONE'),
+
+  -- 클렌저의 세정 성분. 틀린 값은 아니지만 제품을 구별해주지 못한다
+  -- (거의 모든 폼 클렌저가 미리스틱·라우릭·팔미틱애씨드 비누 베이스다)
+  ('미리스틱애씨드', 'EMULSIFIER'), ('라우릭애씨드', 'EMULSIFIER'), ('팔미틱애씨드', 'EMULSIFIER'),
+  ('소듐코코일글라이시네이트', 'EMULSIFIER'), ('소듐라우로일글루타메이트', 'EMULSIFIER'),
+  ('다이소듐라우릴설포석시네이트', 'EMULSIFIER'), ('코코-글루코사이드', 'EMULSIFIER'),
+  ('포타슘코코에이트', 'EMULSIFIER'), ('다이소듐코코암포다이아세테이트', 'EMULSIFIER'),
+  ('데실글루코사이드', 'EMULSIFIER'), ('폴리글리세릴-4카프레이트', 'EMULSIFIER'),
+  ('메틸글루세스-20', 'EMULSIFIER'), ('피이지-32', 'EMULSIFIER'), ('피이지-8', 'EMULSIFIER'),
+  ('피이지-6카프릴릭/카프릭글리세라이즈', 'EMULSIFIER'), ('폴리글리세릴-10라우레이트', 'EMULSIFIER'),
+
+  ('트로메타민', 'PH'),
+  ('폴리C10-30알킬아크릴레이트', 'THICKENER'), ('브이피/에이코신코폴리머', 'THICKENER'),
+  ('하이드록시프로필스타치포스페이트', 'THICKENER')
 on conflict (std_name) do nothing;
 
 -- 일부러 넣지 않은 것 (활성 성분이라 감추면 안 된다)
