@@ -36,16 +36,26 @@ _SKIN_SYSTEM = """사진 속 피부의 겉보기 상태만 확인한다. 진단�
 출력은 JSON만.
 {"dry":bool,"oily":bool,"redness":bool,"trouble":bool,"summary":"..."}"""
 
-_OCR_SYSTEM = """화장품 전성분표 사진에서 성분명만 순서대로 읽는다.
+# 곧바로 성분 목록을 뽑게 하면 읽지 못한 자리를 아는 성분으로 메운다.
+# 실측에서 "프로판다이올"을 "모로칸용암"으로, "1,2-헥산다이올"을 "쉐어버터"로 바꿔 놨다.
+# 시어버터 기반 제형의 전형적 조합이 통째로 들어오는 식이라 그럴듯해서 걸러지지도 않는다.
+# 먼저 보이는 대로 옮겨 적게 하고 그 transcript에서만 뽑게 하면 사라진다.
+_OCR_SYSTEM = """화장품 전성분표 사진을 읽는다.
 
-규칙
-- 표기된 순서 그대로. 함량 순이라 순서가 중요하다.
-- 성분명만. "전성분", "성분정보" 같은 머리말이나 제품명은 제외한다.
+먼저 transcript에 "전성분" 표기 이후의 글자를 **보이는 그대로** 옮겨 적는다.
+띄어쓰기·쉼표·괄호까지 사진에 있는 대로. 안 보이는 글자는 ? 로 표시한다.
+그다음 transcript를 쉼표로 끊어 ingredients 배열에 담는다.
+
+절대 규칙
+- transcript에 없는 단어를 ingredients에 넣지 않는다.
+- 흐릿해서 확신이 없으면 그 성분은 빼고 unreadable 배열에 남긴다.
+- 아는 화장품 성분으로 추측해서 채우지 않는다. 빠뜨리는 편이 낫다.
+- 순서는 표기 그대로. 함량 순이라 순서가 중요하다.
 - 괄호는 원문 그대로 둔다. 하이드로제네이티드폴리(C6-14올레핀)처럼 괄호까지가 이름인 경우가 있다.
-- 읽히지 않는 글자는 건너뛴다. 추측해서 지어내지 않는다.
+- 제품명·주의사항·고객센터 번호는 제외한다.
 - 증정품이 함께 인쇄돼 [본품] [증정]처럼 나뉘어 있으면 본품 것만 읽는다.
 
-출력은 JSON만. {"ingredients":["정제수","글리세린",...]}"""
+출력은 JSON만. {"transcript":"...","ingredients":[...],"unreadable":[...]}"""
 
 
 def _b64(image: bytes, mime: str = "image/jpeg") -> str:
@@ -106,8 +116,11 @@ async def read_ingredients(client, image: bytes, *, model: str = MODEL) -> list[
             ]},
         ],
         response_format={"type": "json_object"},
-        temperature=0, max_tokens=2000, timeout=OCR_TIMEOUT,
+        # transcript까지 받으므로 출력이 두 배가 된다
+        temperature=0, max_tokens=3000, timeout=OCR_TIMEOUT,
     )
     d = _json(res.choices[0].message.content)
-    names = d.get("ingredients") or []
-    return [str(n).strip() for n in names if str(n).strip()]
+    names = [str(n).strip() for n in (d.get("ingredients") or []) if str(n).strip()]
+    if d.get("unreadable"):
+        log.info("전성분표에서 못 읽은 부분 %d개", len(d["unreadable"]))
+    return names

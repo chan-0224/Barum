@@ -30,3 +30,11 @@ build/
 # 배포
 .env.production
 letsencrypt/
+
+# 테스트용 실물 사진 — Public 레포에 개인 사진을 올리지 않는다
+# 루트만 막는다(선행 /). 프론트 에셋은 하위 디렉터리라 영향 없음
+/*.jpg
+/*.jpeg
+/*.png
+/*.webp
+/*.heic
