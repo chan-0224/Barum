@@ -346,7 +346,13 @@ curl -X POST https://hack26-5.syu-likelion.org/predict \
 
 ## 1. 판단 보류가 100%다
 
-얼굴 사진 6장 + 대조군(풍경) 1장, 총 7장 전부 `needs_review: true` / `predicted_class: null`.
+Unsplash 공개 인물 사진 6장 + 대조군(풍경) 1장, 총 7장 전부
+`needs_review: true` / `predicted_class: null`.
+
+> **표본의 한계.** 우리에게 얼굴 데이터가 없어 스톡 사진을 썼다. 전문 조명·보정이 들어간
+> 이미지라 아침 세면대에서 찍는 실제 셀카와 조건이 다르다. 아래 수치는 그 7장에 대한
+> 결과이며 실제 셀카로는 달라질 수 있다. 다만 대조군인 풍경 사진도 그럴듯한 확률을
+> 돌려준 점과 confidence 중앙값이 무작위 기대값에 가까운 점은 표본과 무관한 신호다.
 
 | 항목 | 값 |
 |---|---|

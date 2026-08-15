@@ -17,6 +17,8 @@ from pathlib import Path
 
 import httpx
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 try:
     from dotenv import load_dotenv
 
@@ -24,73 +26,8 @@ try:
 except ImportError:
     pass
 
-# 구분자. 숫자 사이 쉼표는 성분명의 일부다 — 1,2-헥산다이올은 국내 화장품에 대단히 흔하고
-# 쪼개면 "1"과 "2-헥산다이올" 둘 다 쓰레기가 된다. ■ 는 수집본에서 제품을 잇는 데 쓰인다.
-_SEP = re.compile(r"[\n·•;■|]|,(?![0-9])|(?<![0-9]),")
-
-# 유기농·원산지 표시로 붙는 별표(오렌지껍질오일**), 대괄호 잔재
-_MARK = re.compile(r"[*※\[\]]+")
-# 함량·규격 표기. "나이아신아마이드 2%", "레티놀 1,000IU/g"
-_AMOUNT = re.compile(r"\s*\d+(,\d{3})*(\.\d+)?\s*(%|IU/?g?|ppm|mg|㎎)\s*$", re.I)
-_PAREN = re.compile(r"\s*[\(（][^)）]*[\)）]")
-
-
-def split_ingredients(raw: str) -> list[str]:
-    """전성분 원문 → 성분명 목록. 괄호는 여기서 떼지 않는다 — match()가 판단한다."""
-    out = []
-    for token in _SEP.split(raw or ""):
-        name = _MARK.sub("", token or "").strip().strip(".·-")
-        name = re.sub(r"\s+", " ", name)
-        # 숫자 조각이나 한 글자는 성분명이 아니다. 이런 게 이명 인덱스에 우연히 걸리면
-        # 없는 성분이 제품에 등록되고 충돌 판정까지 오염된다(원칙 1).
-        if len(name) >= 2 and not name.isdigit():
-            out.append(name)
-    return out
-
-
-def _candidates(name: str) -> list[str]:
-    """매칭 후보를 좁은 것부터.
-
-    괄호를 무조건 떼면 안 된다. `살리실릭애씨드(0.5%)`는 떼야 맞고,
-    `하이드로제네이티드폴리(C6-14올레핀)`은 괄호까지가 표준명이다. 둘 다 시도한다.
-    """
-    seen, out = set(), []
-    for c in (name,
-              _AMOUNT.sub("", name),
-              _PAREN.sub("", name).strip(),
-              _PAREN.sub("", _AMOUNT.sub("", name)).strip()):
-        c = c.strip(" ,.")
-        if c and c not in seen:
-            seen.add(c)
-            out.append(c)
-    return out + [c.replace(" ", "") for c in out]
-
-
-def build_index(rows: list[dict]) -> tuple[dict, dict]:
-    """(표준명 → id, 이명 → id). 이명은 쉼표로 분해해 완전일치로만 쓴다.
-
-    부분일치(ilike)를 쓰면 '가지추출물'이 '잔가지추출물'에 걸린다 — data/README.md 참조.
-    """
-    by_std = {r["std_name"]: r["id"] for r in rows}
-    by_syn = {}
-    for r in rows:
-        # 이명도 같은 규칙으로 분해한다. 단순 split(",")을 쓰면 "1,10-데칸디올"이
-        # "1"과 "10-데칸디올"로 쪼개져 by_syn["1"]이 생기고, 전성분에서 떨어져 나온
-        # 숫자 조각이 여기에 걸려 엉뚱한 성분으로 매칭된다.
-        for syn in split_ingredients(r.get("synonym") or ""):
-            if syn not in by_std:  # 표준명이 우선한다
-                by_syn.setdefault(syn, r["id"])
-    return by_std, by_syn
-
-
-def match(name: str, by_std: dict, by_syn: dict) -> int | None:
-    """후보 형태를 순서대로 표준명 → 이명 완전일치로 대조한다. 부분일치는 쓰지 않는다."""
-    for c in _candidates(name):
-        if c in by_std:
-            return by_std[c]
-        if c in by_syn:
-            return by_syn[c]
-    return None
+# 분해·매칭 규칙은 matching.py가 단일 원본이다. OCR(api/ocr.py)도 같은 것을 쓴다
+from matching import build_index, candidates, match, split_ingredients  # noqa: E402,F401
 
 
 def _api(path: str, **kw) -> httpx.Response:
@@ -175,11 +112,11 @@ def _selfcheck() -> None:
     assert split_ingredients("정제수·글리세린\n판테놀") == ["정제수", "글리세린", "판테놀"]
     # 괄호·함량은 split이 아니라 match의 후보 생성이 처리한다
     assert split_ingredients("나이아신아마이드 2%, 향료(리모넨)") == ["나이아신아마이드 2%", "향료(리모넨)"]
-    assert "나이아신아마이드" in _candidates("나이아신아마이드 2%")
-    assert "향료" in _candidates("향료(리모넨)")
+    assert "나이아신아마이드" in candidates("나이아신아마이드 2%")
+    assert "향료" in candidates("향료(리모넨)")
     # 괄호까지가 표준명인 성분은 원형 그대로도 후보에 남아야 한다
-    assert "하이드로제네이티드폴리(C6-14올레핀)" in _candidates("하이드로제네이티드폴리(C6-14올레핀)")
-    assert "레티놀" in _candidates("레티놀 1,000IU/g")
+    assert "하이드로제네이티드폴리(C6-14올레핀)" in candidates("하이드로제네이티드폴리(C6-14올레핀)")
+    assert "레티놀" in candidates("레티놀 1,000IU/g")
     # 유기농 별표, 제품을 잇는 ■ 구분자
     assert split_ingredients("오렌지껍질오일**, 아시아티코사이드*") == ["오렌지껍질오일", "아시아티코사이드"]
     assert split_ingredients("리모넨 ■ 우르오스 정제수")[0] == "리모넨"
