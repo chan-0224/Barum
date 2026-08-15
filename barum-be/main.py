@@ -16,9 +16,11 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 try:
     from dotenv import load_dotenv
@@ -65,6 +67,31 @@ app.include_router(routines.router)
 async def health():
     return {"status": "ok", "service": "ai",
             "openai": bool(os.environ.get("OPENAI_API_KEY"))}
+
+
+# FastAPI 기본 오류는 {"detail": ...}인데 프론트는 {code, message} 하나로 처리한다.
+# 형식이 둘이면 화면마다 분기가 생긴다(docs/API.md 공통 에러)
+_STATUS_CODE = {
+    400: "VALIDATION_ERROR", 401: "UNAUTHORIZED", 404: "PRODUCT_NOT_FOUND",
+    409: "EMPTY_VANITY", 422: "OCR_NO_TEXT", 502: "EXTERNAL_API_ERROR", 504: "AI_TIMEOUT",
+}
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error(request, exc: StarletteHTTPException):
+    detail = exc.detail
+    if isinstance(detail, dict) and "code" in detail:
+        return JSONResponse(status_code=exc.status_code, content=detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": _STATUS_CODE.get(exc.status_code, "EXTERNAL_API_ERROR"),
+                 "message": str(detail)})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request, exc: RequestValidationError):
+    return JSONResponse(status_code=400,
+                        content={"code": "VALIDATION_ERROR", "message": "요청 값을 확인해 주세요."})
 
 
 @app.exception_handler(Exception)

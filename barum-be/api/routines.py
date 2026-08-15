@@ -112,13 +112,34 @@ async def _events(req: RoutineRequest, jwt: str, client):
 
 
 def _weather_summary(w: dict) -> str:
+    """카드 상단 한 줄. 규칙 기반이다 — 날씨 문구까지 LLM에 맡기면 매번 달라지고 비용도 든다.
+
+    연결형과 종결형을 따로 둔다. "건조해요"에서 요를 고로 바꾸면 "건조해고"가 된다.
+    """
     h, p = w.get("humidity"), w.get("pm10")
-    moisture = None if h is None else ("건조해요" if h < 40 else ("습해요" if h > 70 else "적당해요"))
-    air = None if p is None else ("미세먼지 좋음" if p <= 30 else
-                                  ("미세먼지 보통" if p <= 80 else "미세먼지 나쁨"))
-    if moisture and air:
-        return moisture.replace("요", "고 ") + air + "이에요"
-    return (air + "이에요") if air else (("오늘 공기가 " + moisture) if moisture else "")
+    if h is None:
+        moist = None
+    elif h < 40:
+        moist = ("건조하고", "건조해요")
+    elif h > 70:
+        moist = ("습하고", "습해요")
+    else:
+        moist = ("적당하고", "적당해요")
+
+    if p is None:
+        air = None
+    elif p <= 30:
+        air = "미세먼지는 좋아요"
+    elif p <= 80:
+        air = "미세먼지는 보통이에요"
+    else:
+        air = "미세먼지가 나빠요"
+
+    if moist and air:
+        return f"{moist[0]} {air}"
+    if air:
+        return air
+    return f"오늘 공기가 {moist[1]}" if moist else ""
 
 
 @router.post("/stream")

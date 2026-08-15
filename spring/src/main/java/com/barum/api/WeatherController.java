@@ -61,36 +61,37 @@ public class WeatherController {
         if (pm10 == null) {
             air = null;
         } else if (pm10 <= 30) {
-            air = "미세먼지 좋음";
+            air = "미세먼지는 좋아요";
         } else if (pm10 <= 80) {
-            air = "미세먼지 보통";
+            air = "미세먼지는 보통이에요";
         } else if (pm10 <= 150) {
-            air = "미세먼지 나쁨";
+            air = "미세먼지가 나빠요";
         } else {
-            air = "미세먼지 매우 나쁨";
+            air = "미세먼지가 매우 나빠요";
         }
 
-        String moisture;
-        if (humidity == null) {
-            moisture = null;
-        } else if (humidity < 40) {
-            moisture = "건조해요";
-        } else if (humidity <= 70) {
-            moisture = "적당해요";
-        } else {
-            moisture = "습해요";
+        // 연결형과 종결형을 따로 둔다. "건조해요"에서 요를 고로 바꾸면 "건조해고"가 된다
+        String joined = null, ended = null;
+        if (humidity != null) {
+            if (humidity < 40) {
+                joined = "건조하고";
+                ended = "건조해요";
+            } else if (humidity <= 70) {
+                joined = "적당하고";
+                ended = "적당해요";
+            } else {
+                joined = "습하고";
+                ended = "습해요";
+            }
         }
 
-        if (moisture == null && air == null) {
-            return "";
+        if (joined != null && air != null) {
+            return joined + " " + air;
         }
-        if (air == null) {
-            return "오늘 공기가 " + moisture;
+        if (air != null) {
+            return air;
         }
-        if (moisture == null) {
-            return air + "이에요";
-        }
-        return moisture.replace("요", "고 ") + air + "이에요";
+        return ended != null ? "오늘 공기가 " + ended : "";
     }
 
     private static Double asDouble(Object v) {
