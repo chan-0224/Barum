@@ -316,3 +316,80 @@ if (response != null && response.needsReview()) {
 - 서비스 UI와 API 소비자는 결과를 의료 진단으로 표현하면 안 됩니다.
 - `needs_review: true` 결과를 특정 피부 타입으로 강제 변환하면 안 됩니다.
 
+
+---
+
+# 부록 A. 실행 가이드 (원본 API_USAGE.md)
+
+```bash
+MODEL_CHECKPOINT=outputs/checkpoints/best_model.pt \
+uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+- `GET /health` 프로세스 상태와 체크포인트 준비 여부
+- `POST /predict` `multipart/form-data`의 `file` 필드
+- 허용 MIME: JPEG, PNG, WebP, BMP / 기본 최대 10 MiB
+- 손상 이미지·MIME 불일치·크기 초과는 각각 400, 415, 413
+
+```bash
+curl -X POST https://hack26-5.syu-likelion.org/predict \
+  -F "file=@sample.jpg;type=image/jpeg"
+```
+
+---
+
+# 부록 B. 바름 적용 검토 (2026-08-15 실측)
+
+배포 주소 `https://hack26-5.syu-likelion.org/` 로 실제 호출해 판단한 결과.
+
+## 결론 — **주 신호로 쓸 수 없다. 보조로만, 그것도 조건부.**
+
+## 1. 판단 보류가 100%다
+
+얼굴 사진 6장 + 대조군(풍경) 1장, 총 7장 전부 `needs_review: true` / `predicted_class: null`.
+
+| 항목 | 값 |
+|---|---|
+| needs_review 비율 | **7/7 (100%)** |
+| confidence 중앙값 | **0.32** (임계값 0.55) |
+| 응답 시간 중앙값 | 0.38초 |
+
+4클래스라 무작위 기대값이 0.25인데 중앙값이 0.32다. Macro F1 0.37도 같은 얘기를 한다.
+**임계값을 낮춰서 억지로 확정시키면 안 된다** — 명세도 `needs_review: true`일 때
+최대 확률 클래스를 결과로 저장하지 말라고 명시하고 있다.
+
+대조군으로 넣은 **풍경 사진도 `normal` 0.30**을 반환했다. 얼굴 여부를 판별하지 않으므로
+사용자가 엉뚱한 사진을 올려도 그럴듯한 확률이 나온다.
+
+## 2. 출력이 화면이 필요한 것과 다르다
+
+| | |
+|---|---|
+| 이 API | 피부 **타입** — normal / dry / oily / combination |
+| 화면 4·12가 필요한 것 | 피부 **상태** 한 줄 — "턱 주변에 트러블이 보여요" |
+
+타입과 상태는 다른 축이다. `dry` → "건조해 보여요" 정도는 옮길 수 있지만,
+`docs/PLAN.md`가 정의한 셀카 판독 항목(건조·유분·**홍조**·**트러블**) 중
+홍조와 트러블은 이 모델이 아예 다루지 않는다.
+
+## 3. 배포된 모델이 명세와 다르다
+
+명세는 운영 모델을 `skin-type-efficientnet-b0-additional-v1`로 적었는데
+`/health`가 돌려주는 값은 `skin-type-efficientnet-b0-v1`이다.
+**구 체크포인트가 떠 있다.** 위 수치는 그 상태에서 잰 것이다.
+
+## 4. 그래서 어떻게 쓰나
+
+**셀카 판독은 GPT-4o Vision으로 간다.** `CLAUDE.md` 스택도 원래 그렇게 적혀 있고,
+상태 한 줄(건조·유분·홍조·트러블)을 자연어로 뽑는 건 그쪽이 맞다.
+
+이 API는 **보조 신호**로만 쓴다. 붙인다면 이 조건으로:
+
+- `needs_review: true`면 **버린다.** 확률만 보고 타입을 확정하지 않는다
+- `false`이고 `dry` 또는 `oily`일 때만 루틴 프롬프트에 한 줄 더한다
+  ("사진상 건조해 보여요" 정도, 진단 표현 금지 — 원칙 3)
+- 호출 실패·타임아웃은 무시하고 진행한다. 셀카는 원래 보조 신호라
+  없어도 날씨와 화장대만으로 루틴이 나온다(`routine.build_prompt`가 `skin=None`을 처리한다)
+
+**현재 상태(판단 보류 100%)로는 붙여도 화면에 아무것도 안 나온다.**
+모델이 개선돼 confidence가 올라오면 그때 켜는 스위치 정도로 두는 게 맞다.
