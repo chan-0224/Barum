@@ -61,7 +61,14 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsSource() {
         CorsConfiguration c = new CorsConfiguration();
-        c.setAllowedOrigins(allowedOrigins);
+        // setAllowedOrigins가 아니라 패턴을 쓴다. 정확한 주소도 그대로 동작하고,
+        // 개발 중에는 http://localhost:* 처럼 포트를 열어 둘 수 있다.
+        //
+        // 목록에 없는 오리진은 프리플라이트(OPTIONS)가 403으로 끊긴다. 실제 요청이 나가기 전이라
+        // 서버 로그에도 흔적이 적어 원인을 찾기 어렵다. 흔한 함정 두 가지:
+        //   - 프론트 개발 서버 포트가 3000이 아닐 때(Vite 5173 등)
+        //   - localhost 대신 127.0.0.1로 접속할 때. CORS에서 이 둘은 다른 오리진이다
+        c.setAllowedOriginPatterns(allowedOrigins);
         c.setAllowedMethods(List.of("GET", "POST", "DELETE", "PATCH", "OPTIONS"));
         c.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         c.setMaxAge(3600L);

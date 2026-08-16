@@ -13,6 +13,7 @@
 
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -65,12 +66,20 @@ app = FastAPI(
     openapi_url="/openapi.json" if _DOCS else None,
 )
 
-# 루틴 SSE만 프론트가 직접 부른다. 나머지는 Spring이 부르므로 브라우저를 타지 않는다
+# 루틴 SSE만 프론트가 직접 부른다. 나머지는 Spring이 부르므로 브라우저를 타지 않는다.
+#
+# Spring과 같은 환경변수를 쓴다. * 가 들어간 항목은 정규식으로 바꿔 넘긴다 —
+# 개발 중에는 프론트 포트가 바뀌고(Vite 5173 등), localhost와 127.0.0.1도 다른 오리진이라
+# 하나씩 적다 보면 프리플라이트 403으로 시간을 버린다.
+_origins = [o.strip() for o in
+            os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+_exact = [o for o in _origins if "*" not in o]
+_patterns = [re.escape(o).replace(r"\*", r"[^/]*") for o in _origins if "*" in o]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in
-                   os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-                   if o.strip()],
+    allow_origins=_exact,
+    allow_origin_regex="|".join(f"^{p}$" for p in _patterns) if _patterns else None,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Internal-Key"],
     max_age=3600,
