@@ -56,6 +56,60 @@ rls.asUser(userId, jdbc -> jdbc.query("select * from daily_records", ...));
 `/api/v1/catalog/**`는 토큰 없이 열려 있다. 참조 데이터이고, 화장대를 만들기 전에
 제품을 둘러볼 수 있어야 한다.
 
+## Swagger UI — 테스트용 익명 토큰 받기
+
+`http://barum-dev.duckdns.org:8081/swagger-ui.html` (개발 중에만. `DOCS_ENABLED=true`)
+
+카탈로그 말고는 전부 `Authorize`에 토큰을 넣어야 401이 안 뜬다. 프론트 없이 토큰만
+따로 뽑는 방법 두 가지. **둘 다 프론트의 `signInAnonymously()`와 똑같은 요청이다.**
+
+`$SUPABASE_URL`·`$SUPABASE_ANON_KEY`는 `.env` 또는 Supabase 대시보드 →
+Settings → API Keys. anon 키는 원래 브라우저에 노출되는 키라 공유해도 된다
+(막는 건 키가 아니라 RLS다). **`service_role` 키는 절대 여기 쓰지 말 것** — RLS를
+통째로 우회해서 남의 데이터가 다 보인다.
+
+### curl
+
+```bash
+curl -s -X POST "$SUPABASE_URL/auth/v1/signup" \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])"
+```
+
+출력된 문자열을 Swagger `Authorize`에 붙여넣는다. **`Bearer ` 접두사는 빼고 값만.**
+
+### 브라우저 콘솔
+
+아무 페이지에서나 F12 → Console. (Supabase가 Origin을 그대로 허용해서 CORS가 안 걸린다)
+
+```js
+const SUPABASE_URL = "https://xxxxxxxx.supabase.co";
+const ANON_KEY = "sb_publishable_...";
+
+const r = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+  method: "POST",
+  headers: { apikey: ANON_KEY, "Content-Type": "application/json" },
+  body: "{}",
+});
+const { access_token } = await r.json();
+copy(access_token);            // 클립보드로 복사 (Chrome·Firefox 콘솔 전용 함수)
+console.log(access_token);
+```
+
+### 알아둘 것
+
+- **유효기간 1시간.** 401이 갑자기 뜨면 대개 만료다. 다시 뽑으면 된다
+- **호출할 때마다 새 익명 유저가 생긴다.** 토큰을 바꾸면 화장대가 빈 상태로 돌아간다.
+  제품을 등록하고 이어서 테스트하려면 **같은 토큰을 계속 쓸 것**
+- 토큰의 `sub`가 곧 `auth.uid()`다. 디코딩해서 확인하려면 [jwt.io](https://jwt.io)
+- FastAPI `/docs`도 같은 토큰을 쓴다. 단 `X-Internal-Key`가 걸린 두 개
+  (`/context/daily`, `/ocr/ingredients`)는 Spring 전용이라 JWT가 아니라 `AI_INTERNAL_KEY`를 넣는다
+- 응답에 `refresh_token`도 오지만 **테스트에는 필요 없다.** 만료되면 위 명령을 다시 돌리는 게 빠르다
+- `{"code":"VALIDATION_ERROR","message":"존재하지 않는 경로입니다."}`가 **400**으로 오면
+  토큰 문제가 아니라 **매핑이 없는 경로**다. 오타이거나 아직 구현 전이라는 뜻
+  (`GET /api/v1/products`가 지금 여기 해당 — 3·4·7번이 아직 비어 있다)
+
 ## 커넥션 풀 주의
 
 Supabase Transaction Pooler(6543)는 pgbouncer transaction 모드라 서버사이드 prepared
