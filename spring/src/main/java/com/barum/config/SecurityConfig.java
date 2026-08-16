@@ -35,6 +35,9 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/api/v1/health").permitAll()
+                        // DOCS_ENABLED=false면 springdoc이 아예 매핑을 만들지 않아 404가 된다.
+                        // 여기서 열어 두는 것만으로 문서가 노출되지는 않는다
+                        .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // 카탈로그는 참조 데이터라 토큰 없이도 열어둔다. 화장대를 만들기 전에
                         // 제품을 둘러볼 수 있어야 하고, 어차피 유저 데이터가 아니다.
                         .requestMatchers("/api/v1/catalog/**").permitAll()

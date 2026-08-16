@@ -81,7 +81,9 @@ services:
     build:
       context: ./barum-be
     restart: unless-stopped
-    env_file: [.env.production]
+    # .env.ai에는 SUPABASE_SERVICE_KEY만 있다. RLS를 우회하는 키라
+    # 필요 없는 Spring 컨테이너의 환경에는 두지 않는다(원칙 4)
+    env_file: [.env.production, .env.ai]
     expose:
       - "8000"
     mem_limit: 640m

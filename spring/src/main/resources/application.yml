@@ -24,7 +24,22 @@ spring:
           # 허용해 모든 토큰이 401로 떨어진다 — 서명 검증 실패라 로그에도 안 남는다.
           jws-algorithms: [ES256, RS256]
 
+# Swagger UI. 기본은 꺼짐 — 끄는 걸 잊는 쪽이 켜는 걸 잊는 쪽보다 비싸다
+springdoc:
+  api-docs:
+    enabled: ${DOCS_ENABLED:false}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${DOCS_ENABLED:false}
+    path: /swagger-ui.html
+    # 화면 순서를 API.md 번호대로 보이게
+    tags-sorter: alpha
+    operations-sorter: alpha
+
 barum:
+  docs:
+    # Try it out이 나갈 주소. 비우면 브라우저가 보고 있는 주소를 쓴다
+    server-url: ${DOCS_SERVER_URL:}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   ai:

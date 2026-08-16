@@ -45,7 +45,25 @@ async def lifespan(app: FastAPI):
     await app.state.openai.close()
 
 
-app = FastAPI(title="barum AI", version="0.1.0", lifespan=lifespan)
+# /docs는 개발·통합용이라 기본은 꺼짐. 끄는 걸 잊는 쪽이 켜는 걸 잊는 쪽보다 비싸다.
+# 켜려면 DOCS_ENABLED=true
+_DOCS = os.environ.get("DOCS_ENABLED", "").lower() in ("1", "true", "yes")
+
+app = FastAPI(
+    title="바름 AI 서버",
+    version="0.1.0",
+    description="""Spring·프론트가 부르는 AI 엔드포인트. 명세 원본은 `docs/API.md` 3부.
+
+- `/internal/v1/context/daily`, `/internal/v1/ocr/ingredients` — **Spring**이 부른다. `X-Internal-Key`
+- `/internal/v1/routines/stream` — **프론트가 직접** 부른다. Supabase 익명 세션 JWT.
+  SSE라 Swagger의 Try it out으로는 스트림이 제대로 안 보인다. curl이나 브라우저로 확인할 것
+
+이 서버는 DB에 쓰지 않는다. 저장은 Spring이 한다.""",
+    lifespan=lifespan,
+    docs_url="/docs" if _DOCS else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if _DOCS else None,
+)
 
 # 루틴 SSE만 프론트가 직접 부른다. 나머지는 Spring이 부르므로 브라우저를 타지 않는다
 app.add_middleware(

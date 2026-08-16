@@ -1,0 +1,51 @@
+# 맥미니 개발·통합용 오버레이. 가비아 서버가 열리는 8/18까지만 쓴다.
+#
+#   docker compose --env-file .env.production \
+#     -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# 운영(가비아)은 docker-compose.prod.yml 을 쓴다. 거기서는 실도메인 + Let's Encrypt라
+# DuckDNS가 필요 없다.
+#
+# HTTPS를 붙이지 않는 이유: Let's Encrypt HTTP-01 챌린지는 80 포트를 쓰는데
+# 맥미니의 80은 다른 스택이 점유 중이고, 이틀 뒤 옮길 서버라 여기서 발급받으면
+# 레이트 리밋(주 5회/도메인)만 깎는다. 개발·통합용이라 HTTP로 충분하다.
+
+services:
+  # 가정용 인터넷은 공인 IP가 바뀐다. 갱신을 안 붙이면 며칠 뒤 주소가 죽는다
+  duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    restart: unless-stopped
+    environment:
+      - SUBDOMAINS=${DUCKDNS_SUBDOMAIN}
+      - TOKEN=${DUCKDNS_TOKEN}
+      - UPDATE_IP=ipv4
+      - LOG_FILE=false
+      - TZ=Asia/Seoul
+    mem_limit: 64m
+    networks: [barum]
+
+  # 외부에서 붙는 주소라 Host 규칙을 건다. localhost로도 계속 되게 둘 다 허용한다
+  spring:
+    environment:
+      - DOCS_ENABLED=true
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.spring.rule=PathPrefix(`/api/v1`)
+      - traefik.http.routers.spring.entrypoints=web
+      - traefik.http.services.spring.loadbalancer.server.port=8080
+      # Swagger UI는 /api/v1 밖이라 별도 라우터가 필요하다
+      - traefik.http.routers.spring-docs.rule=PathPrefix(`/swagger-ui`) || PathPrefix(`/v3/api-docs`)
+      - traefik.http.routers.spring-docs.entrypoints=web
+      - traefik.http.routers.spring-docs.service=spring
+
+  fastapi:
+    environment:
+      - DOCS_ENABLED=true
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.fastapi.rule=PathPrefix(`/internal/v1`)
+      - traefik.http.routers.fastapi.entrypoints=web
+      - traefik.http.services.fastapi.loadbalancer.server.port=8000
+      - traefik.http.routers.fastapi-docs.rule=PathPrefix(`/docs`) || Path(`/openapi.json`)
+      - traefik.http.routers.fastapi-docs.entrypoints=web
+      - traefik.http.routers.fastapi-docs.service=fastapi
