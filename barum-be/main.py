@@ -81,7 +81,8 @@ app.add_middleware(
     allow_origins=_exact,
     allow_origin_regex="|".join(f"^{p}$" for p in _patterns) if _patterns else None,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Internal-Key"],
+    # Spring과 같은 이유로 "*". 목록으로 두면 Accept 같은 헤더 하나 빠졌을 때 프리플라이트가 깨진다
+    allow_headers=["*"],
     max_age=3600,
 )
 

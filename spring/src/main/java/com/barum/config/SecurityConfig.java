@@ -70,7 +70,13 @@ public class SecurityConfig {
         //   - localhost 대신 127.0.0.1로 접속할 때. CORS에서 이 둘은 다른 오리진이다
         c.setAllowedOriginPatterns(allowedOrigins);
         c.setAllowedMethods(List.of("GET", "POST", "DELETE", "PATCH", "OPTIONS"));
-        c.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        // 목록으로 두면 브라우저가 요청한 헤더 중 목록에 없는 게 하나라도 있을 때 프리플라이트가
+        // 깨진다. Accept를 빠뜨려서 실제로 한 번 겪었다 — axios·fetch가 자동으로 붙이는 헤더까지
+        // 전부 예측해서 적는 건 불가능하다. "*"면 요청한 헤더를 그대로 되돌려준다.
+        //
+        // 느슨해 보이지만 위험하지 않다. 헤더를 허용한다고 서버가 그 헤더를 신뢰하는 게 아니고,
+        // 접근 통제는 오리진 목록과 JWT가 한다.
+        c.setAllowedHeaders(List.of("*"));
         c.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", c);
