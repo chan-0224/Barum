@@ -46,9 +46,16 @@ SYSTEM = """너는 스킨케어 루틴을 짜주는 조수다. 사용자가 오�
    "보습막을 형성합니다" ✗ → "건조함을 막아줘요" ✓
    기호(※, [], ―)나 입력에 있던 표시를 그대로 옮겨 쓰지 않는다.
 4. 성분 충돌 판정은 이미 내려져 있다. 판단을 바꾸지 말고 그대로 따른다.
-   AVOID로 묶인 성분을 가진 제품이 둘 다 목록에 있으면 **둘 다 skip에 넣는다.**
+   AVOID로 묶인 두 제품이 목록에 있으면 **하나는 반드시 apply에, 나머지 하나는 skip에**
+   넣는다. 판정 문구가 "오늘은 하나만 쓰세요"라서, 둘 다 빼거나 둘 다 안 고르면
+   화면에 경고만 뜨고 정작 바를 게 없어진다. 둘 다 apply에 넣어서도 안 된다.
    어느 제품이 걸렸는지는 "충돌 판정에 걸린 성분"으로 표시돼 있다.
+
+   어느 쪽을 남길지는 오늘 날씨와 피부 상태를 보고 정한다.
+     - 건조하거나 피부가 예민해 보이면 자극이 적은 쪽을 남긴다.
+     - 레티놀 계열은 아침에 맞지 않는다. 다른 쪽을 남기고 레티놀 계열을 skip한다.
    skip 이유에는 어떤 성분과 겹쳐서 오늘 쉬는지 적는다.
+   남긴 제품의 apply 이유에는 왜 이쪽을 골랐는지 적는다.
 5. **skip에는 충돌로 오늘 쉬는 제품만 넣는다. 최대 2개.**
    고르지 않았을 뿐인 제품은 skip이 아니다. "클렌저는 하나만 써요" 같은 문장은 쓰지 않는다.
    충돌이 없으면 skip은 빈 배열이다.
@@ -81,7 +88,8 @@ def _weather_line(w: dict) -> str:
 
 
 def build_prompt(weather: dict, skin: dict | None, products: list[dict],
-                 conflicts: list[dict], conflict_ingredients: set[str] = frozenset()) -> str:
+                 conflicts: list[dict], conflict_ingredients: set[str] = frozenset(),
+                 avoid_pairs: list[tuple[int, int]] = ()) -> str:
     """사용자 메시지. products는 [{category, name, key_ingredients, ingredients}] 순서가 곧 번호다.
 
     conflict_ingredients — **AVOID 판정**에 관여한 성분의 표준명.
@@ -102,11 +110,21 @@ def build_prompt(weather: dict, skin: dict | None, products: list[dict],
     else:
         lines.append("[피부 상태] 확인하지 않음 (날씨와 보유 제품만으로 정해 줘)")
 
+    # 짝을 제품 줄에 직접 붙인다. 아래에 따로 블록으로 적어 두면 모델이 "skip 하나 넣었으니
+    # 됐다"로 읽고 나머지 하나를 목록에서 통째로 빠뜨린다(실측 5/5)
+    partner = {}
+    for i, j in avoid_pairs:
+        partner.setdefault(i, []).append(j)
+        partner.setdefault(j, []).append(i)
+
     lines.append("\n[보유 제품]")
     for i, p in enumerate(products):
         ing = ", ".join(p.get("key_ingredients") or []) or "-"
         hit = sorted(set(p.get("ingredients") or []) & set(conflict_ingredients))
-        mark = f"  <충돌 판정에 걸린 성분: {', '.join(hit)}>" if hit else ""
+        mark = f"  <충돌 성분: {', '.join(hit)}>" if hit else ""
+        if i in partner:
+            others = ", ".join(f"{k}번" for k in sorted(partner[i]))
+            mark += f"  <{others}과 동시 사용 불가 — 이 중 하나는 반드시 apply에 들어가야 함>"
         lines.append(f"  {i}. [{p['category']}] {p['name']}  (주요 성분: {ing}){mark}")
 
     if conflicts:
@@ -117,11 +135,80 @@ def build_prompt(weather: dict, skin: dict | None, products: list[dict],
     else:
         lines.append("\n[성분 충돌 판정] 없음")
 
+    # 등급과 성분명만 주면 모델이 걸린 제품을 통째로 피해 버린다 — 실측에서 5개 시나리오
+    # 전부 둘 다 안 골랐다. 번호로 직접 지목하고 무엇을 해야 하는지 한 줄로 붙인다
+    if avoid_pairs:
+        lines.append("\n[반드시 지킬 것]")
+        for i, j in avoid_pairs:
+            lines.append(
+                f"  {i}번과 {j}번은 함께 쓸 수 없다.\n"
+                f"   - 둘 중 **정확히 하나**를 apply 배열에 넣어라. "
+                f"apply에 둘 다 없으면 틀린 답이다.\n"
+                f"   - **그냥 고르지 않고 넘어가는 것도 틀린 답이다.** "
+                f"skip에 하나 넣었다고 끝이 아니다.\n"
+                f"   - 나머지 하나를 skip 배열에 넣어라.")
+        lines.append("  이 제품은 '같은 단계 최대 2개'와 '전체 4~6개'보다 우선한다. "
+                     "자리가 모자라면 충돌과 무관한 제품을 대신 빼라.")
+        lines.append("  어느 쪽을 고를지는 위의 날씨와 피부 상태를 근거로 정하고, "
+                     "그 근거를 apply 이유에 쓴다.")
+
     lines.append("\n오늘 아침 루틴을 JSON으로 정해 줘.")
     return "\n".join(lines)
 
 
 MAX_SKIP = 2  # docs/SCREENS.md 화면 4 — "뺄 것: 제품 1~2개"
+
+# AVOID 쌍에서 살아남은 제품의 이유. 서버가 고정한다 —
+# 모델이 이미 둘 다 빼기로 결정한 상태라 쓸 만한 문장이 없다
+KEPT_REASON = "겹치는 제품 중 오늘은 이것만 써요"
+DROPPED_REASON = "겹치는 성분이 있어 오늘은 쉬어요"
+
+# 아침 루틴이라 레티놀 계열을 뺀다. AVOID 룰 35건은 전부
+# 레티놀 계열 · 각질 정리 산 · 순수 비타민C 세 축의 조합이고, 이 중 아침에 맞지 않는 건
+# 레티놀 계열뿐이다(광분해·광민감).
+# ponytail: 표준명 부분일치. 룰테이블의 레티놀 계열 4종(레티놀, 레티닐팔미테이트,
+# 레티닐레티노에이트, 하이드록시피나콜론레티노에이트)이 모두 "레티"를 포함한다.
+# 나중에 추가되는 유도체도 자동으로 걸린다. 판정이 아니라 **둘 중 뭘 남길지**에만 쓰므로
+# 오탐이 나도 안전 문제는 없다 — 어느 쪽을 남기든 둘을 같이 바르지는 않는다.
+_RETINOID = "레티"
+
+
+def avoid_product_pairs(products: list[dict], raw_conflicts: list[dict]) -> list[tuple[int, int]]:
+    """AVOID 판정에 걸린 **제품 번호 쌍**. parse()가 "정확히 하나만 skip"을 강제할 때 쓴다.
+
+    raw_conflicts는 `conflicts.check_conflicts_by_product()`의 반환값 그대로.
+    성분 쌍만 오므로 어느 제품끼리 걸렸는지는 여기서 되짚는다.
+    """
+    owners: dict[str, set[int]] = {}
+    for i, p in enumerate(products):
+        for n in p.get("ingredients") or []:
+            n = (n or "").strip()
+            if n:
+                owners.setdefault(n, set()).add(i)
+
+    pairs = set()
+    for c in raw_conflicts:
+        if c.get("level") != "AVOID":
+            continue
+        a, b = c["ingredients"]
+        for x in owners.get(a, ()):
+            for y in owners.get(b, ()):
+                if x != y:  # 한 제품 안의 배합은 판정 대상이 아니다
+                    pairs.add((min(x, y), max(x, y)))
+    return sorted(pairs)
+
+
+def _keep_side(i: int, j: int, products: list[dict],
+               conflict_ingredients: set[str]) -> int:
+    """AVOID 쌍에서 남길 제품 번호. 모델이 못 고르면 여기서 정한다."""
+    def is_retinoid(k: int) -> bool:
+        hit = set(products[k].get("ingredients") or []) & set(conflict_ingredients)
+        return any(_RETINOID in n for n in hit)
+
+    ri, rj = is_retinoid(i), is_retinoid(j)
+    if ri != rj:
+        return j if ri else i   # 레티놀 계열이 아닌 쪽을 남긴다
+    return min(i, j)            # 둘 다 같은 계열이면 목록 순서대로. 임의지만 재현된다
 
 
 def _clean(text: str) -> str | None:
@@ -135,7 +222,8 @@ def _clean(text: str) -> str | None:
     return t[:60]
 
 
-def parse(raw: str, products: list[dict]) -> dict:
+def parse(raw: str, products: list[dict], avoid_pairs: list[tuple[int, int]] = (),
+          conflict_ingredients: set[str] = frozenset()) -> dict:
     """모델 출력 → 카드에 올릴 형태. 번호가 유일한 연결고리라 범위 밖이면 버린다."""
     m = re.search(r"\{.*\}", raw or "", re.S)
     if not m:
@@ -160,17 +248,50 @@ def parse(raw: str, products: list[dict]) -> dict:
         return out
 
     apply_ = pick("apply")
-    # 순서는 코드가 정한다. 모델에게 맡기면 매번 흔들린다
+    # 모델이 "고르지 않은 제품"을 전부 skip에 넣는 경향이 있다. 카드가 무너지므로 잘라낸다
+    skip = [x for x in pick("skip")
+            if x["index"] not in {a["index"] for a in apply_}]
+
+    def entry(i: int, reason: str) -> dict:
+        return {"index": i, "name": products[i]["name"],
+                "category": products[i]["category"], "reason": reason}
+
+    # AVOID 쌍은 **정확히 하나만** 빠져야 한다. 판정 문구가 "오늘은 하나만 쓰세요"인데
+    # 둘 다 빼면 사용자가 아무것도 안 바르고, 둘 다 넣으면 경고를 무시하는 셈이 된다.
+    # 프롬프트로 지시하고 여기서 한 번 더 보장한다 — 모델이 어느 쪽이든 틀릴 수 있다
+    for i, j in avoid_pairs:
+        in_apply = {i, j} & {x["index"] for x in apply_}
+        if len(in_apply) == 1:
+            continue  # 이미 하나만 골랐다. 모델의 선택을 존중한다
+
+        keep = _keep_side(i, j, products, conflict_ingredients)
+        drop = j if keep == i else i
+
+        if len(in_apply) == 2:
+            # 경고를 무시하고 둘 다 바르라고 한 경우. 한쪽을 내린다
+            log.info("AVOID 쌍 %s가 둘 다 apply에 있어 %d번을 skip으로 내린다", (i, j), drop)
+            apply_ = [x for x in apply_ if x["index"] != drop]
+            if drop not in {x["index"] for x in skip}:
+                skip.append(entry(drop, DROPPED_REASON))
+        else:
+            # 둘 다 skip이거나, 둘 다 아예 고르지 않은 경우. 후자가 실제로 더 잦다 —
+            # 모델이 충돌 제품을 통째로 피해 버린다. 어느 쪽이든 사용자는 아무것도 못 바르는데
+            # 배지에는 "오늘은 하나만 쓰세요"가 떠 있어 말이 맞지 않는다
+            log.info("AVOID 쌍 %s에서 apply가 0개라 %d번을 올린다", (i, j), keep)
+            skip = [x for x in skip if x["index"] != keep]
+            apply_.append(entry(keep, KEPT_REASON))
+            if drop not in {x["index"] for x in skip}:
+                skip.append(entry(drop, DROPPED_REASON))
+
+    # 순서는 코드가 정한다. 모델에게 맡기면 매번 흔들린다.
+    # 위에서 apply가 바뀔 수 있으므로 번호는 여기서 매긴다
     apply_.sort(key=lambda x: _STEP.get(x["category"], 9))
     for n, x in enumerate(apply_, start=1):
         x["order"] = n
 
-    # 모델이 "고르지 않은 제품"을 전부 skip에 넣는 경향이 있다. 카드가 무너지므로 잘라낸다
-    skip = [x for x in pick("skip")
-            if x["index"] not in {a["index"] for a in apply_}][:MAX_SKIP]
     return {
         "apply": [{"order": x["order"], "name": x["name"], "reason": x["reason"]} for x in apply_],
-        "skip": [{"name": x["name"], "reason": x["reason"]} for x in skip],
+        "skip": [{"name": x["name"], "reason": x["reason"]} for x in skip[:MAX_SKIP]],
     }
 
 
@@ -180,7 +301,7 @@ class RoutineTimeout(RuntimeError):
 
 async def generate(client, weather: dict, skin: dict | None, products: list[dict],
                    conflicts: list[dict], conflict_ingredients: set[str] = frozenset(),
-                   *, model: str = MODEL) -> dict:
+                   raw_conflicts: list[dict] = (), *, model: str = MODEL) -> dict:
     """루틴 카드를 만든다. client는 openai.AsyncOpenAI 인스턴스.
 
     실측에서 대부분 2초 안에 끝나지만 20초를 넘긴 경우가 있었다. 모델 쪽 지연이라
@@ -188,7 +309,8 @@ async def generate(client, weather: dict, skin: dict | None, products: list[dict
     총 25초를 넘기면 포기한다 — 화면 3이 30초에서 오류로 넘어가기 때문에
     그 전에 우리가 먼저 끝내야 재시도 버튼이라도 보여줄 수 있다.
     """
-    prompt = build_prompt(weather, skin, products, conflicts, conflict_ingredients)
+    pairs = avoid_product_pairs(products, raw_conflicts or [])
+    prompt = build_prompt(weather, skin, products, conflicts, conflict_ingredients, pairs)
     started = time.monotonic()
     last = None
 
@@ -206,7 +328,8 @@ async def generate(client, weather: dict, skin: dict | None, products: list[dict
                 max_tokens=600,
                 timeout=min(FIRST_TIMEOUT, left) if attempt == 1 else left,
             )
-            return parse(res.choices[0].message.content, products)
+            return parse(res.choices[0].message.content, products,
+                         pairs, conflict_ingredients)
         except Exception as e:  # 타임아웃·일시적 오류·JSON 깨짐 모두 한 번은 다시 해본다
             last = e
             log.warning("루틴 생성 %d회차 실패 (%.1f초 경과): %s",
@@ -237,6 +360,62 @@ def _selfcheck() -> None:
     both = parse('{"apply":[{"product":0,"reason":"세안"}],"skip":[{"product":0,"reason":"쉬어요"}]}',
                  products)
     assert both["skip"] == [], both
+
+    # ── AVOID 쌍은 정확히 하나만 빠진다 ────────────────────────────
+    pair_products = [
+        {"category": "CLEANSER", "name": "클렌징폼", "ingredients": ["소듐라우로암포아세테이트"]},
+        {"category": "SERUM", "name": "레티놀 앰플", "ingredients": ["레티놀"]},
+        {"category": "SERUM", "name": "비타민C 세럼", "ingredients": ["아스코빅애씨드"]},
+    ]
+    raw_conf = [{"ingredients": ["레티놀", "아스코빅애씨드"], "level": "AVOID"}]
+    pairs = avoid_product_pairs(pair_products, raw_conf)
+    assert pairs == [(1, 2)], pairs
+    ing = {"레티놀", "아스코빅애씨드"}
+
+    # 둘 다 skip → 레티놀이 아닌 쪽(2번 비타민C)이 apply로 올라온다
+    both_skip = parse(json.dumps({"apply": [{"product": 0, "reason": "세안해요"}],
+                                  "skip": [{"product": 1, "reason": "겹쳐서 쉬어요"},
+                                           {"product": 2, "reason": "겹쳐서 쉬어요"}]}),
+                      pair_products, pairs, ing)
+    assert [s["name"] for s in both_skip["skip"]] == ["레티놀 앰플"], both_skip
+    assert "비타민C 세럼" in [a["name"] for a in both_skip["apply"]], both_skip
+    assert [a["order"] for a in both_skip["apply"]] == [1, 2], both_skip  # 번호 재부여
+
+    # 둘 다 apply → 레티놀 쪽이 skip으로 내려간다 (경고를 무시하면 안 된다)
+    both_apply = parse(json.dumps({"apply": [{"product": 1, "reason": "결을 정리해요"},
+                                             {"product": 2, "reason": "환하게 해줘요"}],
+                                   "skip": []}),
+                       pair_products, pairs, ing)
+    assert [a["name"] for a in both_apply["apply"]] == ["비타민C 세럼"], both_apply
+    assert [s["name"] for s in both_apply["skip"]] == ["레티놀 앰플"], both_apply
+
+    # 모델이 이미 하나만 골랐으면 그대로 둔다
+    ok_one = parse(json.dumps({"apply": [{"product": 1, "reason": "결을 정리해요"}],
+                               "skip": [{"product": 2, "reason": "겹쳐서 쉬어요"}]}),
+                   pair_products, pairs, ing)
+    assert [a["name"] for a in ok_one["apply"]] == ["레티놀 앰플"], ok_one
+    assert [s["name"] for s in ok_one["skip"]] == ["비타민C 세럼"], ok_one
+
+    # 같은 계열끼리 걸리면 목록 순서가 앞선 쪽을 남긴다
+    same = [{"category": "SERUM", "name": "A", "ingredients": ["레티놀"]},
+            {"category": "SERUM", "name": "B", "ingredients": ["레티닐팔미테이트"]}]
+    sp = avoid_product_pairs(same, [{"ingredients": ["레티놀", "레티닐팔미테이트"],
+                                     "level": "AVOID"}])
+    got = parse(json.dumps({"apply": [], "skip": [{"product": 0, "reason": "쉬어요"},
+                                                  {"product": 1, "reason": "쉬어요"}]}),
+                same, sp, {"레티놀", "레티닐팔미테이트"})
+    assert [a["name"] for a in got["apply"]] == ["A"], got
+
+    # 쌍을 아예 안 고른 경우에도 하나는 올라온다 (실제로 가장 잦았다)
+    neither = parse(json.dumps({"apply": [{"product": 0, "reason": "세안해요"}], "skip": []}),
+                    pair_products, pairs, ing)
+    assert "비타민C 세럼" in [a["name"] for a in neither["apply"]], neither
+    assert [s["name"] for s in neither["skip"]] == ["레티놀 앰플"], neither
+
+    # 한 제품 안에 두 성분이 다 있으면 쌍이 아니다 (docs/API.md 표시 규칙)
+    solo = [{"category": "SERUM", "name": "복합 앰플", "ingredients": ["레티놀", "아스코빅애씨드"]}]
+    assert avoid_product_pairs(solo, raw_conf) == []
+
     print("selfcheck ok", file=sys.stderr)
 
 

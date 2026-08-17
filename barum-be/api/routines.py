@@ -88,7 +88,9 @@ async def _events(req: RoutineRequest, jwt: str, client):
         avoid_ing = {n for c in raw if c["level"] == "AVOID" for n in c["ingredients"]}
         yield sse("conflict", {"pairs": badges})
 
-        card = await routine.generate(client, weather, skin, products, badges, avoid_ing)
+        # raw까지 넘긴다. AVOID가 어느 제품 쌍에 걸렸는지 알아야
+        # "둘 중 하나만 skip"을 검증에서 보장할 수 있다
+        card = await routine.generate(client, weather, skin, products, badges, avoid_ing, raw)
 
         by_name = {p["name"]: p["id"] for p in products}
         for a in card["apply"]:
