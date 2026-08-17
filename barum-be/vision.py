@@ -20,7 +20,11 @@ _BANNED = ["여드름", "아토피", "지루성", "습진", "피부염", "모낭
 
 _SKIN_SYSTEM = """사진 속 피부의 겉보기 상태만 확인한다. 진단하지 않는다.
 
-네 가지 신호의 유무만 판단한다.
+먼저 face를 판단한다.
+  face  사진에 사람 얼굴이 보이고 피부를 살펴볼 수 있는가
+
+face가 false면 나머지는 모두 false, summary는 빈 문자열로 둔다.
+face가 true면 네 가지 신호의 유무를 판단한다.
   dry      건조해 보이는가 (각질, 당김)
   oily     번들거리는가
   redness  붉은 기가 있는가
@@ -30,11 +34,12 @@ _SKIN_SYSTEM = """사진 속 피부의 겉보기 상태만 확인한다. 진단�
 - 병명이나 진단으로 읽히는 말을 쓰지 않는다. "여드름" "피부염" "치료" 금지.
 - summary는 보이는 것만 한 문장으로. 30자 이내, "~해요" 체.
   "턱 주변에 트러블이 보여요" "볼이 조금 붉어 보여요" "전반적으로 건조해 보여요"
-- 얼굴이 없거나 판단이 어려우면 모든 신호를 false로 두고 summary를 빈 문자열로 둔다.
-- 조명이나 화질 때문에 확신이 없으면 false로 둔다. 없는 걸 있다고 하지 않는다.
+- 조명이나 화질 때문에 확신이 없으면 그 신호는 false로 둔다. 없는 걸 있다고 하지 않는다.
+- **얼굴은 보이는데 네 신호가 다 없으면 그대로 전부 false로 두고 summary는 빈 문자열로 둔다.**
+  이건 정상이다. 억지로 신호를 만들어 내지 않는다. face는 true로 유지한다.
 
 출력은 JSON만.
-{"dry":bool,"oily":bool,"redness":bool,"trouble":bool,"summary":"..."}"""
+{"face":bool,"dry":bool,"oily":bool,"redness":bool,"trouble":bool,"summary":"..."}"""
 
 # 곧바로 성분 목록을 뽑게 하면 읽지 못한 자리를 아는 성분으로 메운다.
 # 실측에서 "프로판다이올"을 "모로칸용암"으로, "1,2-헥산다이올"을 "쉐어버터"로 바꿔 놨다.
@@ -69,11 +74,21 @@ def _json(raw: str) -> dict:
     return json.loads(m.group(0))
 
 
+NO_FINDING = "오늘은 특별한 이상이 없어요"
+
+
 async def read_skin(client, image: bytes, *, model: str = MODEL) -> dict | None:
-    """셀카 → {dry, oily, redness, trouble, summary}. 실패하면 None.
+    """셀카 → {dry, oily, redness, trouble, summary}. **판독에 실패했을 때만** None.
 
     셀카는 보조 신호다(docs/PLAN.md). 실패해도 루틴은 날씨와 화장대로 만든다 —
     그래서 예외를 올리지 않고 None을 준다.
+
+    None과 "특이사항 없음"은 다르다.
+      None                    호출 실패·타임아웃·얼굴 없음 → 화면 4에 피부 영역을 그리지 않는다
+      summary=NO_FINDING      잘 읽었고 신호가 하나도 없었다 → "오늘은 특별한 이상이 없어요"
+
+    예전에는 둘을 모두 None으로 뭉쳤다. 실측에서 얼굴 6장 중 3장이 여기 걸려
+    멀쩡한 판독이 실패로 처리됐다.
     """
     try:
         res = await client.chat.completions.create(
@@ -93,13 +108,28 @@ async def read_skin(client, image: bytes, *, model: str = MODEL) -> dict | None:
         log.warning("셀카 판독 실패: %s", e)
         return None
 
+    return _interpret(d)
+
+
+def _interpret(d: dict) -> dict | None:
+    """모델 응답 → 반환값. 네트워크를 타지 않아 그대로 테스트할 수 있다."""
+    # face 키가 빠진 응답은 얼굴이 있는 것으로 본다. 없다고 단정하면 멀쩡한 판독이
+    # 다시 실패로 잡히는데, 그게 원래 고치려던 문제다
+    if not bool(d.get("face", True)):
+        log.info("셀카에서 얼굴을 찾지 못했다")
+        return None
+
     summary = (d.get("summary") or "").strip()
     if any(w in summary for w in _BANNED):  # 원칙 3 — 걸리면 문장을 버린다
         log.warning("셀카 요약에 진단 표현이 섞여 버림: %r", summary)
         summary = ""
     flags = {k: bool(d.get(k)) for k in ("dry", "oily", "redness", "trouble")}
-    if not summary and not any(flags.values()):
-        return None  # 아무것도 못 읽었다
+    if not any(flags.values()):
+        # 얼굴은 읽었는데 신호가 없다. 문구를 모델에 맡기지 않고 서버가 고정한다 —
+        # 매번 표현이 흔들리면 화면 4가 지저분해지고 금칙어가 섞일 여지도 생긴다
+        return {**flags, "summary": NO_FINDING}
+    # 신호는 있는데 summary가 금칙어로 비워진 경우 빈 문자열로 남긴다.
+    # 없는 문장을 지어내는 것보다 화면에서 한 줄 비는 편이 낫다
     return {**flags, "summary": summary[:40]}
 
 
@@ -124,3 +154,34 @@ async def read_ingredients(client, image: bytes, *, model: str = MODEL) -> list[
     if d.get("unreadable"):
         log.info("전성분표에서 못 읽은 부분 %d개", len(d["unreadable"]))
     return names
+
+
+if __name__ == "__main__":
+    # 판독 실패와 "특이사항 없음"이 갈리는지. 네트워크를 타지 않는다
+    ok = _interpret({"face": True, "dry": False, "oily": True,
+                     "redness": False, "trouble": False, "summary": "번들거려 보여요"})
+    assert ok == {"dry": False, "oily": True, "redness": False,
+                  "trouble": False, "summary": "번들거려 보여요"}, ok
+
+    clear = _interpret({"face": True, "dry": False, "oily": False,
+                        "redness": False, "trouble": False, "summary": ""})
+    assert clear is not None and clear["summary"] == NO_FINDING, clear
+    assert not any(clear[k] for k in ("dry", "oily", "redness", "trouble")), clear
+
+    assert _interpret({"face": False, "dry": False, "oily": False,
+                       "redness": False, "trouble": False, "summary": ""}) is None
+
+    # face 키가 없는 구형 응답은 얼굴이 있는 것으로 본다
+    assert _interpret({"dry": False, "oily": False, "redness": False,
+                       "trouble": False, "summary": ""})["summary"] == NO_FINDING
+
+    # 금칙어가 섞이면 문장만 버린다. 신호가 있으므로 None이 아니다 (원칙 3)
+    banned = _interpret({"face": True, "dry": False, "oily": False,
+                         "redness": True, "trouble": True, "summary": "여드름이 보여요"})
+    assert banned["summary"] == "" and banned["trouble"] is True, banned
+
+    # 금칙어를 지운 뒤 신호도 없으면 "특이사항 없음"이 된다
+    assert _interpret({"face": True, "dry": False, "oily": False, "redness": False,
+                       "trouble": False, "summary": "피부염 진단"})["summary"] == NO_FINDING
+
+    print("vision 자체검사 통과")

@@ -236,9 +236,23 @@ data: {"stage":"SKIN","label":"피부 상태 확인 중"}
 
 ```
 event: context
-data: {"weather":{"temp":29.0,"humidity":38.0,"pm10":22,"pm25":14,"summary":"건조하고 미세먼지 보통이에요"},"skin":{"summary":"턱 주변 트러블이 보여요","flags":["ACNE"]}}
+data: {"weather":{"temp":29.0,"humidity":38.0,"pm10":22,"pm25":14,"summary":"건조하고 미세먼지 보통이에요","regionLabel":"서울"},"skin":{"dry":false,"oily":true,"redness":false,"trouble":false,"summary":"피부가 번들거려 보여요"}}
 ```
-카드 상단 영역. 셀카를 건너뛴 경우 `skin`은 null.
+카드 상단 영역.
+
+`skin`은 상태 신호 넷의 **유무**와 요약 한 줄이다. 점수나 등급은 없다(원칙 3).
+
+| `skin` | 뜻 | 화면 4 |
+|---|---|---|
+| `null` | 셀카를 건너뛰었거나, 판독 실패·얼굴 없음 | 피부 영역을 **그리지 않는다** |
+| 플래그 중 하나 이상 true | 신호가 잡혔다 | `summary` 그대로 표시 |
+| 플래그 전부 false | 잘 읽었고 특이사항이 없다 | `summary`가 `"오늘은 특별한 이상이 없어요"`로 내려온다 |
+
+**`null`과 "전부 false"는 다르다.** 전자는 못 읽은 것이고 후자는 읽었는데 깨끗한 것이다.
+`summary`만 보고 그리면 둘 다 처리된다 — `skin`이 null인지만 확인하면 된다.
+
+드물게 신호는 있는데 `summary`가 빈 문자열일 수 있다(요약에 진단 표현이 섞여 서버가 버린 경우).
+이때는 플래그로 문구를 만들거나 영역을 비운다.
 
 ```
 event: conflict
