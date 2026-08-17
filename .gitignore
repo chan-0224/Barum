@@ -38,3 +38,6 @@ letsencrypt/
 /*.png
 /*.webp
 /*.heic
+
+# 얼굴 사진은 민감정보(원칙 5). 폴더 통째로 막는다
+/face_picture/
