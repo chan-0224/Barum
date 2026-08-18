@@ -74,11 +74,22 @@ sudo usermod -aG docker $USER && newgrp docker
 git clone https://github.com/chan-0224/Barum.git && cd Barum
 cp .env.production.example .env.production
 vi .env.production          # DOMAIN, ACME_EMAIL 포함해 전부 채운다
+chmod 600 .env.production
 #
 # .env.production 은 커밋되지 않는다(Public 레포). 서버에서 직접 만들어야 한다.
 # 값은 로컬 spring/.env 와 barum-be/.env 에 있다. 안전한 경로로 옮길 것 —
 # Slack DM·메신저는 로그가 남는다. scp 를 쓰거나 화면 보고 직접 입력한다.
 # JDBC URL은 & 때문에 반드시 따옴표로 감싼다.
+
+# 2-1. .env.ai 도 만들어야 한다 — 빠뜨리면 compose가 아예 뜨지 않는다
+#      "env file /home/ubuntu/Barum/.env.ai not found" 로 죽는다
+printf '%s\n' 'SUPABASE_SERVICE_KEY=sb_secret_...' > .env.ai && chmod 600 .env.ai
+#
+# FastAPI만 이 키를 쓴다(참조 테이블 조회·Storage 다운로드). RLS를 우회하는 키라
+# 필요 없는 Spring 컨테이너의 환경에는 두지 않는다(원칙 4).
+
+# 2-2. 운영에서는 CORS에서 localhost·192.168 을 빼고 프론트 도메인만 남긴다
+#      CORS_ALLOWED_ORIGINS=https://*.vercel.app
 
 # 3. 방화벽 — HTTP-01 챌린지가 80을 쓴다. 막혀 있으면 발급이 실패한다
 sudo ufw allow 80,443/tcp
@@ -123,14 +134,33 @@ Spring 헬스체크는 **DB까지 확인한다.** 프로세스만 살아 있고 
 
 ## 상태
 
+**2026-08-18 가비아 배포 완료.** `https://barum-api.duckdns.org`
+
 | 항목 | |
 |---|---|
-| Spring | 준비됨 |
-| Traefik + TLS | 준비됨 (도메인 대기) |
-| **FastAPI** | **`main.py` 없음 — 컨테이너가 기동하지 않는다.** 구교승 담당분 |
+| Spring | 가동 중 |
+| FastAPI | 가동 중 |
+| Traefik + TLS | Let's Encrypt 발급 완료 (만료 2026-11-16, 자동 갱신) |
+| 문서(Swagger·/docs) | 운영에서는 닫힘 — 전부 404 |
 
-FastAPI가 없으면 날씨(API.md 1)가 502로 떨어진다. Spring은 정상 동작하고
-화면도 날씨 영역만 비운 채 돈다(SCREENS.md 화면 1의 예외 처리).
+운영 주소는 **`barum-api`** 다. `barum.duckdns.org` 는 외부인이 선점해서 못 쓴다.
+
+맥미니의 `barum-dev.duckdns.org` 는 개발·통합용으로 **따로 살아 있다.** 둘은 IP가 달라
+서로 영향을 주지 않는다. 프론트 통합이 끝나면 맥미니 쪽을 내린다.
+
+| | 주소 | 용도 | 문서 |
+|---|---|---|---|
+| 운영 | `https://barum-api.duckdns.org` | 제출·발표 | 닫힘 |
+| 개발 | `http://barum-dev.duckdns.org:8081` | 프론트 통합 | 열림 |
+
+### DuckDNS 30일 규칙
+
+DuckDNS는 **30일간 갱신이 없으면 레코드를 지운다.** 가비아는 고정 IP라 갱신 컨테이너를
+띄우지 않았으므로, 9/17 전에 한 번은 눌러 줘야 한다. 행사(8/25)까지는 문제없다.
+
+```bash
+curl "https://www.duckdns.org/update?domains=barum-api&token=<TOKEN>&ip=1.201.117.234"
+```
 
 ## 자주 나오는 문제
 
