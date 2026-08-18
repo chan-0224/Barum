@@ -32,6 +32,16 @@ public class GlobalExceptionHandler {
         return body(ErrorCode.VALIDATION_ERROR, ErrorCode.VALIDATION_ERROR.message());
     }
 
+    /**
+     * 본문 JSON이 깨졌거나 타입이 안 맞는 경우. 잡지 않으면 마지막 그물에 걸려
+     * 502 EXTERNAL_API_ERROR로 나가는데, 그러면 클라이언트 잘못인데 서버 장애로 보고하는 셈이라
+     * 프론트가 성공할 리 없는 재시도를 반복한다.
+     */
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, String>> handleUnreadable(Exception e) {
+        return body(ErrorCode.VALIDATION_ERROR, "요청 본문을 읽을 수 없습니다.");
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(NoResourceFoundException e) {
         return body(ErrorCode.VALIDATION_ERROR, "존재하지 않는 경로입니다.");

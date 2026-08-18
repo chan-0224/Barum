@@ -101,19 +101,24 @@ async def health():
 # 형식이 둘이면 화면마다 분기가 생긴다(docs/API.md 공통 에러)
 _STATUS_CODE = {
     400: "VALIDATION_ERROR", 401: "UNAUTHORIZED", 404: "PRODUCT_NOT_FOUND",
-    409: "EMPTY_VANITY", 422: "OCR_NO_TEXT", 502: "EXTERNAL_API_ERROR", 504: "AI_TIMEOUT",
+    409: "EMPTY_VANITY", 422: "OCR_NO_TEXT", 429: "RATE_LIMITED",
+    502: "EXTERNAL_API_ERROR", 504: "AI_TIMEOUT",
 }
 
 
 @app.exception_handler(StarletteHTTPException)
 async def http_error(request, exc: StarletteHTTPException):
+    # 핸들러를 직접 만들면 Starlette가 붙여 주던 헤더가 사라진다.
+    # 429의 Retry-After가 여기서 없어지면 프론트가 언제 다시 부를지 알 수 없다
+    headers = getattr(exc, "headers", None)
     detail = exc.detail
     if isinstance(detail, dict) and "code" in detail:
-        return JSONResponse(status_code=exc.status_code, content=detail)
+        return JSONResponse(status_code=exc.status_code, content=detail, headers=headers)
     return JSONResponse(
         status_code=exc.status_code,
         content={"code": _STATUS_CODE.get(exc.status_code, "EXTERNAL_API_ERROR"),
-                 "message": str(detail)})
+                 "message": str(detail)},
+        headers=headers)
 
 
 @app.exception_handler(RequestValidationError)

@@ -11,16 +11,20 @@ conflict가 item보다 먼저 나가는 것이 중요하다. 경고 배지가 �
 """
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
+import math
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import conflicts
+import ratelimit
 import routine
 import supa
 import vision
@@ -144,8 +148,34 @@ def _weather_summary(w: dict) -> str:
     return f"오늘 공기가 {moist[1]}" if moist else ""
 
 
+def _sub(jwt: str) -> str:
+    """JWT의 sub. 서명은 검증하지 않는다 — 여기서는 세는 열쇠로만 쓴다.
+
+    위조한 sub로 카운터를 피할 수는 있지만, 그 토큰으로는 화장대 조회(Supabase)가 막혀
+    GPT 호출까지 가지 못한다. 실제 비용이 드는 지점은 유효한 토큰 뒤에 있다.
+    """
+    try:
+        payload = jwt.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload))["sub"]
+    except (IndexError, KeyError, ValueError, binascii.Error):
+        # 형식이 깨진 토큰은 하나로 묶어 센다. 어차피 뒤에서 401로 떨어진다
+        return "anonymous"
+
+
 @router.post("/stream")
 async def stream(req: RoutineRequest, request: Request, jwt: str = Depends(user_jwt)):
+    retry_after = ratelimit.check(_sub(jwt))
+    if retry_after:
+        # SSE 안의 error 이벤트가 아니라 HTTP 상태로 끊는다. 스트림을 열기 전이라
+        # 프론트가 EventSource/fetch 에러로 바로 받는다(docs/API.md 공통 에러)
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "RATE_LIMITED",
+                    "message": "요청이 많습니다. 잠시 후 다시 시도해 주세요."},
+            headers={"Retry-After": str(math.ceil(retry_after))},
+        )
+
     client = request.app.state.openai
     return StreamingResponse(
         _events(req, jwt, client),

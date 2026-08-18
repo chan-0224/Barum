@@ -34,6 +34,24 @@ public class ProductService {
     /** OCR 등록 제품은 카탈로그가 없어 카테고리를 알 수 없다. */
     private static final String OCR_CATEGORY = "ETC";
 
+    /**
+     * 화장대 상한. 아침 30초에 쓰는 물건이라 50개도 현실에서는 넘치는 수다.
+     *
+     * <p>상한이 없으면 루틴 프롬프트가 그대로 커진다 — 실측에서 제품 1000개면 38,000토큰이라
+     * 분당 한도(TPM 30,000)를 한 번의 요청이 넘겨 서비스 전체가 429가 됐다.
+     * 화면 문제가 아니라 가용성 문제라 서버에서 막는다.
+     */
+    private static final int MAX_PRODUCTS = 50;
+
+    /** 한 번에 담을 수 있는 카탈로그 제품 수. */
+    private static final int MAX_CATALOG_IDS = 50;
+
+    /** OCR 별칭 길이. 화면 6의 제품명 자리에 들어가야 한다. */
+    private static final int MAX_ALIAS = 100;
+
+    /** 전성분표 성분 수. 실물 최대가 60개 안팎이라 200이면 충분히 넉넉하다. */
+    private static final int MAX_INGREDIENTS = 200;
+
     private final Rls rls;
 
     public ProductService(Rls rls) {
@@ -167,8 +185,14 @@ public class ProductService {
                     "catalogIds 또는 ocrProduct 중 하나만 보내 주세요.");
         }
 
+        if (hasCatalog && req.catalogIds().size() > MAX_CATALOG_IDS) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR,
+                    "한 번에 " + MAX_CATALOG_IDS + "개까지 담을 수 있습니다.");
+        }
+
         return rls.asUser(userId, jdbc -> {
             boolean sampleCleared = clearSampleIfNeeded(jdbc);
+            checkCapacity(jdbc, hasCatalog ? req.catalogIds().size() : 1);
             List<Map<String, Object>> created =
                     hasCatalog ? addCatalog(jdbc, userId, req.catalogIds())
                                : addOcr(jdbc, userId, req.ocrProduct());
@@ -193,11 +217,32 @@ public class ProductService {
         return true;
     }
 
+    /** 샘플을 비운 뒤에 센다. 샘플 13종 때문에 상한에 걸리는 일이 없어야 한다. */
+    private void checkCapacity(JdbcTemplate jdbc, int adding) {
+        Integer now = jdbc.queryForObject("select count(*) from products", Integer.class);
+        int have = now == null ? 0 : now;
+        if (have + adding > MAX_PRODUCTS) {
+            throw new ApiException(ErrorCode.VANITY_FULL,
+                    "화장대에는 " + MAX_PRODUCTS + "개까지 담을 수 있습니다. 쓰지 않는 제품을 지워 주세요.");
+        }
+    }
+
     private List<Map<String, Object>> addCatalog(JdbcTemplate jdbc, String userId, List<Long> ids) {
+        // 요청 안에서 겹치는 것부터 거른다. DB를 보기 전에 잡히는 쪽이 메시지가 정확하다
+        if (ids.stream().distinct().count() != ids.size()) {
+            throw new ApiException(ErrorCode.DUPLICATE_PRODUCT, "같은 제품이 여러 번 들어 있습니다.");
+        }
+
         List<Map<String, Object>> out = new ArrayList<>();
         for (Long catalogId : ids) {
             if (catalogId == null) {
                 throw new ApiException(ErrorCode.VALIDATION_ERROR, "catalogId가 비어 있습니다.");
+            }
+            Integer dup = jdbc.queryForObject(
+                    "select count(*) from products where catalog_id = ?", Integer.class, catalogId);
+            if (dup != null && dup > 0) {
+                throw new ApiException(ErrorCode.DUPLICATE_PRODUCT,
+                        "이미 화장대에 있는 제품입니다.");
             }
             List<Map<String, Object>> found = jdbc.queryForList(
                     "select name from catalog_products where id = ?", catalogId);
@@ -233,6 +278,10 @@ public class ProductService {
         if (alias.isEmpty()) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "제품 이름을 입력해 주세요.");
         }
+        if (alias.length() > MAX_ALIAS) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR,
+                    "제품 이름은 " + MAX_ALIAS + "자까지 입력할 수 있습니다.");
+        }
         List<ProductDto.OcrIngredient> raw =
                 ocr.ingredients() == null ? List.of() : ocr.ingredients();
         List<ProductDto.OcrIngredient> ingredients = raw.stream()
@@ -240,6 +289,10 @@ public class ProductService {
                 .toList();
         if (ingredients.isEmpty()) {
             throw new ApiException(ErrorCode.VALIDATION_ERROR, "성분이 하나도 없습니다.");
+        }
+        if (ingredients.size() > MAX_INGREDIENTS) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR,
+                    "성분은 " + MAX_INGREDIENTS + "개까지 등록할 수 있습니다.");
         }
 
         // catalog_id는 null이어야 한다 — products의 (source = 'OCR') = (catalog_id is null) 제약

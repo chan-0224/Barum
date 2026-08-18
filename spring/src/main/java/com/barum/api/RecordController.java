@@ -66,6 +66,13 @@ public class RecordController {
         String userId = SecurityConfig.currentUserId();
         LocalDate date = req.date() == null ? LocalDate.now(KST) : parseDate(req.date());
 
+        // 남의 폴더 경로를 자기 기록에 심는 걸 막는다(AiProxyController와 같은 규칙).
+        // 지금은 Storage 정책이 서명을 거부해 실제로 새지는 않지만, 방어가 한 겹뿐이면
+        // 나중에 서명을 service_role로 바꾸는 순간 그대로 유출이 된다
+        if (req.selfiePath() != null && !req.selfiePath().startsWith(userId + "/")) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR, "잘못된 경로입니다.");
+        }
+
         Map<String, Object> routine = new LinkedHashMap<>();
         if (req.routine() != null) {
             routine.putAll(req.routine());

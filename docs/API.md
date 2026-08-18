@@ -29,9 +29,28 @@
 | `VALIDATION_ERROR` | 400 | 파라미터 오류 | 입력 안내 |
 | `PRODUCT_NOT_FOUND` | 404 | 제품 없음 | 목록 새로고침 |
 | `EMPTY_VANITY` | 409 | 보유 제품 0개인데 루틴 요청 | 화장대 탭 유도 |
+| `VANITY_FULL` | 409 | 화장대 50개 초과 | "지우고 담아 주세요" 안내 |
+| `DUPLICATE_PRODUCT` | 409 | 이미 담긴 제품 | 해당 제품만 선택 해제 |
+| `RATE_LIMITED` | 429 | 루틴 생성 분당 5회 초과 | `Retry-After`초 뒤 재시도 |
 | `OCR_NO_TEXT` | 422 | 전성분표 인식 실패 | 인식 실패 화면 |
 | `AI_TIMEOUT` | 504 | AI 응답 초과 | 재시도 버튼 |
 | `EXTERNAL_API_ERROR` | 502 | 날씨 API 실패 | 해당 영역만 비움 |
+
+### 입력 제한 (초과하면 위 코드로 거절)
+
+| 대상 | 상한 | 코드 |
+|---|---|---|
+| 화장대 제품 수 | 50개 | `VANITY_FULL` 409 |
+| `catalogIds` 배열 | 50개 | `VALIDATION_ERROR` 400 |
+| OCR `alias` | 100자 | `VALIDATION_ERROR` 400 |
+| OCR `ingredients` | 200개 | `VALIDATION_ERROR` 400 |
+| 루틴 생성 | 유저당 분당 5회 | `RATE_LIMITED` 429 |
+
+제품 수 상한은 화면 문제가 아니라 **가용성** 문제다. 제품 1000개면 루틴 프롬프트가
+38,000토큰이 되어 요청 하나가 분당 토큰 한도를 넘긴다 — 그 한 사람 때문에 전체가 429가 된다.
+
+`RATE_LIMITED`는 **SSE 스트림을 열기 전에** HTTP 429로 끊는다. `event: error`가 아니라
+일반 HTTP 에러이므로 `fetch`의 응답 상태로 잡으면 된다. 응답에 `Retry-After`(초)가 함께 온다.
 
 **enum**
 - `category`: `CLEANSER` `TONER` `SERUM` `CREAM` `SUNSCREEN`
