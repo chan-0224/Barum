@@ -10,6 +10,7 @@ DB에 없는 성분명이 하나라도 섞이면 그 룰은 영원히 매칭되�
 """
 
 import csv
+import re
 import os
 import sys
 from pathlib import Path
@@ -39,9 +40,26 @@ def load_csv(path: Path) -> list[dict]:
                 "label": row["label"].strip(),
                 "reason": row["reason"].strip(),
                 "source": row["source"].strip(),
+                # source_label은 NOT NULL이다. CSV는 한 덩어리라 여기서 나눠 담는다 —
+                # 안 채우면 재적재가 통째로 실패한다(schema/rule_source_split.sql)
+                **_split_source(row["source"].strip()),
                 "verified": row["verified"].strip().lower() == "true",
             })
     return rows
+
+
+_URL = re.compile(r"https?://\S+")
+
+
+def _split_source(source: str) -> dict:
+    """근거 문자열 → {source_label, source_url}. URL이 없으면 url은 None.
+
+    54건 중 17건은 논문 인용이라 링크가 없다. 그 경우 인용 문구가 곧 라벨이다.
+    """
+    m = _URL.search(source)
+    url = m.group(0) if m else None
+    label = _URL.sub("", source).strip() if m else source
+    return {"source_label": label or url, "source_url": url}
 
 
 def validate(rows: list[dict], known: set[str]) -> list[str]:

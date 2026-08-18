@@ -34,12 +34,29 @@ async def _fetch_rules() -> list[dict]:
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(
             f"{url}/rest/v1/ingredient_rules",
-            params={"select": "ingredient_a,ingredient_b,level,label,reason,source"},
+            params={"select": "ingredient_a,ingredient_b,level,label,reason,"
+                              "source,source_label,source_url"},
             headers={"apikey": key, "Authorization": f"Bearer {key}"},
         )
     if r.is_error:
         raise RuntimeError(f"룰 조회 실패 HTTP {r.status_code}: {r.text[:300]}")
     return r.json()
+
+
+def _source(row: dict) -> dict:
+    """근거 출처. 라벨과 링크를 나눠서 준다.
+
+    예전에는 "The Ordinary 공식 가이드 https://..." 한 덩어리였고, 프론트가 정규식으로
+    잘라 링크를 만들다 "이유 보기"가 404로 깨졌다. 54건 중 17건은 URL이 아예 없어서
+    (논문 인용, DOI만) 문자열 전체를 href에 넣으면 링크가 될 수도 없다.
+
+    `source`는 그대로 남긴다 — 프론트가 이미 쓰고 있어 지우면 그 자리에서 깨진다.
+    """
+    return {
+        "source": row["source"],                      # deprecated
+        "sourceLabel": row.get("source_label") or row["source"],
+        "sourceUrl": row.get("source_url"),           # 링크가 없으면 null
+    }
 
 
 async def check_conflicts(ingredient_names: list[str]) -> list[dict]:
@@ -62,7 +79,7 @@ async def check_conflicts(ingredient_names: list[str]) -> list[dict]:
             "level": row["level"],
             "label": row["label"],
             "reason": row["reason"],
-            "source": row["source"],
+            **_source(row),
         }
         for row in await _fetch_rules()
         if row["ingredient_a"] in names and row["ingredient_b"] in names
@@ -104,7 +121,7 @@ async def check_conflicts_by_product(products: dict[str, list[str]]) -> list[dic
             "level": row["level"],
             "label": row["label"],
             "reason": row["reason"],
-            "source": row["source"],
+            **_source(row),
         })
     out.sort(key=lambda x: (_LEVEL_ORDER.get(x["level"], 9), x["ingredients"]))
     return out

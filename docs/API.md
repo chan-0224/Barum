@@ -279,9 +279,20 @@ data: {"weather":{"temp":29.0,"humidity":38.0,"pm10":22,"pm25":14,"summary":"건
 
 ```
 event: conflict
-data: {"pairs":[{"ingredients":["레티놀","비타민C"],"level":"AVOID","label":"같이 쓰지 마세요","reason":"...","source":"..."}]}
+data: {"pairs":[{"ingredients":["레티놀","비타민C"],"level":"AVOID","label":"같이 쓰지 마세요","reason":"...","sourceLabel":"The Ordinary 공식 레티노이드 가이드","sourceUrl":"https://theordinary.com/...","source":"The Ordinary 공식 레티노이드 가이드 https://theordinary.com/..."}]}
 ```
 경고 배지. **본문보다 먼저 도착한다.** 충돌 없으면 빈 배열.
+
+**근거 출처는 `sourceLabel` + `sourceUrl` 두 필드로 온다.**
+
+| 필드 | 설명 |
+|---|---|
+| `sourceLabel` | 화면에 보여줄 문구. 항상 값이 있다 |
+| `sourceUrl` | 링크. **URL이 없는 근거는 `null`** — 54건 중 17건이 논문 인용이라 링크가 없다 |
+| `source` | ~~설명과 URL이 한 문자열~~ **deprecated.** 호환을 위해 남겨 둘 뿐 새로 쓰지 말 것 |
+
+`sourceUrl`이 `null`이면 "이유 보기"를 링크가 아니라 텍스트로 두거나 감춘다.
+문자열에서 URL을 직접 잘라내지 말 것 — 그렇게 만든 링크가 404로 깨진 적이 있다.
 
 **서버가 화면에 맞게 정리해서 내려준다.** 프론트는 받은 순서대로 그리기만 하면 된다
 (`barum-be/conflicts.py`의 `conflict_badges()`).
@@ -397,13 +408,18 @@ DELETE /records/{date}
   "selfieUrl": "https://...signed...",
   "weather": { "temp": 29.0, "humidity": 38.0, "pm10": 22, "pm25": 14, "summary": "..." },
   "skin": { "summary": "턱 주변 트러블이 보여요" },
-  "conflicts": [{ "ingredients": ["레티놀","아스코빅애씨드"], "level": "AVOID", "label": "같이 쓰지 마세요", "reason": "...", "source": "..." }],
+  "conflicts": [{ "ingredients": ["레티놀","비타민C"], "level": "AVOID", "label": "같이 쓰지 마세요", "reason": "...", "sourceLabel": "The Ordinary 공식 레티노이드 가이드", "sourceUrl": "https://theordinary.com/...", "source": "(deprecated)" }],
   "routine": {
     "apply": [{ "order": 1, "name": "약산성 젤 클렌저", "reason": "장벽은 남기고" }],
     "skip":  [{ "name": "레티놀 앰플", "reason": "비타민C와 겹쳐 자극이 커져요" }]
   }
 }
 ```
+
+`conflicts`는 **9번에서 저장한 값을 그대로 돌려준다.** 서버가 다시 판정하지 않는다 —
+그날 실제로 보여 준 경고가 기록이어야 하고, 나중에 룰이 바뀌었다고 지난 기록의 문구가
+달라지면 안 된다. 따라서 8번 `conflict` 이벤트의 pair를 **손대지 말고 그대로** 9번에 넘길 것.
+`sourceLabel`·`sourceUrl`도 그래야 상세 화면에서 같은 링크가 뜬다.
 
 ## 12. 데이터 전체 삭제 — 화면 13
 
